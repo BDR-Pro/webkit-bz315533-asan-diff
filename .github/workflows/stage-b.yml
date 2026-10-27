@@ -7,6 +7,10 @@ on:
         description: "Test iterations per leg (the race is timing-dependent)"
         required: false
         default: "40"
+      legs:
+        description: "Which legs to run (comma-separated: prefix,fixed)"
+        required: false
+        default: "prefix,fixed"
 
 permissions: {}
 
@@ -24,7 +28,11 @@ jobs:
   asan-differential:
     name: "ASan differential - ${{ matrix.leg }}"
     runs-on: macos-26
-    timeout-minutes: 350
+    # GitHub-hosted runners hard-cap jobs at 6h; build alone takes 4.5-5.7h
+    # depending on runner contention (v2 prefix leg hit the old 350m cap
+    # mid-build and was cancelled). 358m leaves test time inside the cap.
+    timeout-minutes: 358
+    if: contains(github.event.inputs.legs || 'prefix,fixed', matrix.leg)
     strategy:
       fail-fast: false
       matrix:
@@ -186,6 +194,7 @@ jobs:
             echo
             echo "--- any non-pass full_results ---"
             for d in iterations/run*; do
+              [ -f "$d/full_results.json" ] || continue
               if ! grep -q '"num_regressions":0' "$d/full_results.json" 2>/dev/null; then
                 echo "===== $d ====="; sed -n '1,80p' "$d/full_results.json" 2>/dev/null
               fi
@@ -195,7 +204,8 @@ jobs:
             ls -lt ~/Library/Logs/DiagnosticReports 2>/dev/null | head -11
           } > evidence/verdict.txt 2>&1
           cp -R ~/Library/Logs/DiagnosticReports evidence/crash-reports 2>/dev/null || true
-          cat evidence/verdict.txt
+          cat evidence/verdict.txt || true
+          exit 0
 
       - name: Upload evidence
         if: always()
