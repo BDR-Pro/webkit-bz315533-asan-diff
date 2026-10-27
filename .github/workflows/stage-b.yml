@@ -1,6 +1,12 @@
 name: stage-b-315533
 
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: "Test iterations per leg (the race is timing-dependent)"
+        required: false
+        default: "40"
 
 permissions: {}
 
@@ -11,6 +17,7 @@ concurrency:
 env:
   WEBKIT_FIX_REF: "2df698f59386b2ffccd45c7ef28422b69eba8c44"
   TEST_PATH: "fast/scrolling/mac/event-dispatcher-timer-close-crash.html"
+  IFRAME_TEST_PATH: "fast/scrolling/mac/event-dispatcher-timer-iframe-crash.html"
   ASAN_OPTIONS: "detect_leaks=0"
 
 jobs:
@@ -80,15 +87,85 @@ jobs:
           cd "$RUNNER_TEMP/webkit"
           Tools/Scripts/build-webkit --release --asan
 
-      - name: Run the LayoutTest (WebKitTestRunner)
-        continue-on-error: true
+      # Single-run v1 (2026-10-27): both legs PASSED, no ASan report, no
+      # DiagnosticReports -> the race did not hit in 30 cycles on this
+      # runner/timing. v2 repeats the test N times per leg and adds the
+      # iframe-removal variant (the shape the PS5 console repro uses).
+      - name: Copy iframe-variant test into the tree
         run: |
           cd "$RUNNER_TEMP/webkit"
-          Tools/Scripts/run-webkit-tests \
-            "$TEST_PATH" \
-            --no-build --no-show-results --no-retry \
-            --results-dir "$RUNNER_TEMP/rwt-results"
-          echo "run-webkit-tests exit code: $?"
+          mkdir -p "LayoutTests/$(dirname "$IFRAME_TEST_PATH")"
+          cat > "LayoutTests/$IFRAME_TEST_PATH" <<'EOF'
+          <!DOCTYPE html><!-- webkit-test-runner [ ThreadedTimeBasedAnimationsEnabled=true ] -->
+          <html>
+          <body>
+          <script>
+          if (window.testRunner) {
+              testRunner.dumpAsText();
+              testRunner.waitUntilDone();
+          }
+          let cycle = 0;
+          const maxCycles = 30;
+          function finish() {
+              document.body.textContent = "PASS if no crash in the UI process during iframe teardown.";
+              if (window.testRunner)
+                  testRunner.notifyDone();
+          }
+          function runCycle() {
+              if (cycle++ >= maxCycles)
+                  return finish();
+              let iframe = document.createElement("iframe");
+              iframe.style.width = "200px";
+              iframe.style.height = "200px";
+              document.body.appendChild(iframe);
+              iframe.srcdoc =
+                  '<div style="width:50px;height:50px;background:green;animation:s 10s linear infinite;will-change:transform"></div>' +
+                  '<style>@keyframes s{from{transform:rotate(0)}to{transform:rotate(360deg)}}</style>';
+              requestAnimationFrame(() => {
+                  requestAnimationFrame(() => {
+                      iframe.remove();
+                      setTimeout(runCycle, 0);
+                  });
+              });
+          }
+          runCycle();
+          </script>
+          </body>
+          </html>
+          EOF
+          ls -la "LayoutTests/$IFRAME_TEST_PATH"
+
+      - name: Run both tests N times (WebKitTestRunner)
+        continue-on-error: true
+        env:
+          ITERATIONS: ${{ github.event.inputs.iterations || '40' }}
+        run: |
+          cd "$RUNNER_TEMP/webkit"
+          mkdir -p "$RUNNER_TEMP/iterations"
+          pass=0; crash=0; other=0
+          for i in $(seq 1 "$ITERATIONS"); do
+            for TEST in "$TEST_PATH" "$IFRAME_TEST_PATH"; do
+              TAG="$(echo "$TEST" | tr '/' '_')"
+              Tools/Scripts/run-webkit-tests "$TEST" \
+                --no-build --no-show-results --no-retry \
+                --results-dir "$RUNNER_TEMP/iterations/run${i}-${TAG}" \
+                >/dev/null 2>&1
+              rc=$?
+              RES="$RUNNER_TEMP/iterations/run${i}-${TAG}/full_results.json"
+              VERDICT="unknown"
+              if grep -q '"num_regressions":0' "$RES" 2>/dev/null && grep -q '"num_passes":1' "$RES" 2>/dev/null; then
+                VERDICT="pass"; pass=$((pass+1))
+              elif grep -Eq '"(num_regressions|num_missing)":[1-9]' "$RES" 2>/dev/null; then
+                VERDICT="nonpass"; other=$((other+1))
+              else
+                VERDICT="nonpass"; other=$((other+1))
+              fi
+              echo "iteration=$i test=$TEST rc=$rc verdict=$VERDICT"
+              echo "iteration=$i test=$TEST rc=$rc verdict=$VERDICT" >> "$RUNNER_TEMP/iterations/log.txt"
+            done
+          done
+          echo "TOTAL pass=$pass nonpass=$other (x2 tests x $ITERATIONS iterations)"
+          echo "TOTAL pass=$pass nonpass=$other (x2 tests x $ITERATIONS iterations)" >> "$RUNNER_TEMP/iterations/log.txt"
 
       - name: Verdict + evidence collection
         if: always()
@@ -99,16 +176,20 @@ jobs:
             echo "=== leg=${{ matrix.leg }} webkit_ref=${{ matrix.webkit_ref }} ==="
             date
             echo
-            echo "--- rwt-results tree ---"
-            find rwt-results -type f 2>/dev/null | sort | head -100
+            echo "--- iteration verdict log ---"
+            cat iterations/log.txt 2>/dev/null | sort | uniq -c | sort -rn | head -20
+            cat iterations/log.txt 2>/dev/null | head -200
             echo
-            echo "--- ASan / UAF frame greps over all rwt output ---"
+            echo "--- ASan / UAF frame greps over ALL iteration output ---"
             grep -rEai "heap-use-after-free|ERROR: AddressSanitizer|__invoke|TimerBase|RemoteLayerTreeEventDispatcher|scheduleDelayedRenderingUpdateDetectionTimer" \
-              rwt-results 2>/dev/null | head -300
+              iterations 2>/dev/null | head -400
             echo
-            echo "--- test output files (full) ---"
-            find rwt-results -type f \( -name "*stderr*" -o -name "*stdout*" -o -name "actual*" -o -name "*crash*" -o -name "*diff*" \) 2>/dev/null \
-              -exec sh -c 'echo "===== {} ====="; sed -n "1,250p" "{}"' \;
+            echo "--- any non-pass full_results ---"
+            for d in iterations/run*; do
+              if ! grep -q '"num_regressions":0' "$d/full_results.json" 2>/dev/null; then
+                echo "===== $d ====="; sed -n '1,80p' "$d/full_results.json" 2>/dev/null
+              fi
+            done
             echo
             echo "--- macOS DiagnosticReports (top 10) ---"
             ls -lt ~/Library/Logs/DiagnosticReports 2>/dev/null | head -11
@@ -123,6 +204,6 @@ jobs:
           name: stage-b-${{ matrix.leg }}
           path: |
             ${{ runner.temp }}/evidence
-            ${{ runner.temp }}/rwt-results
+            ${{ runner.temp }}/iterations
           if-no-files-found: warn
           retention-days: 90
