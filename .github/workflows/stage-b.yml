@@ -1,0 +1,128 @@
+name: stage-b-315533
+
+on: workflow_dispatch
+
+permissions: {}
+
+concurrency:
+  group: stage-b-315533
+  cancel-in-progress: false
+
+env:
+  WEBKIT_FIX_REF: "2df698f59386b2ffccd45c7ef28422b69eba8c44"
+  TEST_PATH: "fast/scrolling/mac/event-dispatcher-timer-close-crash.html"
+  ASAN_OPTIONS: "detect_leaks=0"
+
+jobs:
+  asan-differential:
+    name: "ASan differential - ${{ matrix.leg }}"
+    runs-on: macos-26
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - leg: prefix
+            webkit_ref: "55d9d9007f54ee61fa38accb59cd88a8d4075847"
+          - leg: fixed
+            webkit_ref: "2df698f59386b2ffccd45c7ef28422b69eba8c44"
+    steps:
+      - name: Host + toolchain report
+        run: |
+          sw_vers
+          ls -d /Applications/Xcode*.app || true
+          XCODE_APP=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE_APP"
+          xcodebuild -version
+          sysctl -n hw.ncpu hw.memsize
+          cmake --version | head -1
+          python3 --version
+          perl -v | sed -n '2p'
+          ruby --version || true
+
+      - name: Ensure ninja
+        run: |
+          if ! xcrun -find ninja >/dev/null 2>&1 && ! command -v ninja >/dev/null 2>&1; then
+            brew install ninja
+          fi
+          (xcrun -find ninja 2>/dev/null || command -v ninja)
+
+      - name: Shallow-clone WebKit at ${{ matrix.webkit_ref }}
+        run: |
+          rm -rf "$RUNNER_TEMP/webkit"
+          git init "$RUNNER_TEMP/webkit"
+          cd "$RUNNER_TEMP/webkit"
+          git remote add origin https://github.com/WebKit/WebKit.git
+          git -c protocol.version=2 fetch --depth 1 origin "${{ matrix.webkit_ref }}"
+          git checkout FETCH_HEAD
+          echo "HEAD: $(git rev-parse HEAD)"
+
+      - name: Import regression test from the fix commit (absent at parent)
+        if: matrix.leg == 'prefix'
+        run: |
+          cd "$RUNNER_TEMP/webkit"
+          git -c protocol.version=2 fetch --depth 1 origin "$WEBKIT_FIX_REF"
+          git checkout FETCH_HEAD -- \
+            "LayoutTests/$TEST_PATH" \
+            "LayoutTests/fast/scrolling/mac/event-dispatcher-timer-close-crash-expected.txt"
+          ls -la LayoutTests/fast/scrolling/mac/event-dispatcher-timer-close-crash*
+
+      - name: Build-dir markers (Release + ASan routing)
+        run: |
+          cd "$RUNNER_TEMP/webkit"
+          mkdir -p WebKitBuild
+          printf 'Release\n' > WebKitBuild/Configuration
+          printf 'YES\n' > WebKitBuild/ASan
+          grep -n "cmake-mac" Tools/Scripts/webkitdirs.pm | head -3 || true
+
+      - name: Build WebKit (Release + ASan, Mac)
+        run: |
+          cd "$RUNNER_TEMP/webkit"
+          Tools/Scripts/build-webkit --release --asan
+
+      - name: Run the LayoutTest (WebKitTestRunner)
+        continue-on-error: true
+        run: |
+          cd "$RUNNER_TEMP/webkit"
+          Tools/Scripts/run-webkit-tests \
+            "$TEST_PATH" \
+            --no-build --no-show-results --no-retry \
+            --results-dir "$RUNNER_TEMP/rwt-results"
+          echo "run-webkit-tests exit code: $?"
+
+      - name: Verdict + evidence collection
+        if: always()
+        run: |
+          cd "$RUNNER_TEMP"
+          mkdir -p evidence
+          {
+            echo "=== leg=${{ matrix.leg }} webkit_ref=${{ matrix.webkit_ref }} ==="
+            date
+            echo
+            echo "--- rwt-results tree ---"
+            find rwt-results -type f 2>/dev/null | sort | head -100
+            echo
+            echo "--- ASan / UAF frame greps over all rwt output ---"
+            grep -rEai "heap-use-after-free|ERROR: AddressSanitizer|__invoke|TimerBase|RemoteLayerTreeEventDispatcher|scheduleDelayedRenderingUpdateDetectionTimer" \
+              rwt-results 2>/dev/null | head -300
+            echo
+            echo "--- test output files (full) ---"
+            find rwt-results -type f \( -name "*stderr*" -o -name "*stdout*" -o -name "actual*" -o -name "*crash*" -o -name "*diff*" \) 2>/dev/null \
+              -exec sh -c 'echo "===== {} ====="; sed -n "1,250p" "{}"' \;
+            echo
+            echo "--- macOS DiagnosticReports (top 10) ---"
+            ls -lt ~/Library/Logs/DiagnosticReports 2>/dev/null | head -11
+          } > evidence/verdict.txt 2>&1
+          cp -R ~/Library/Logs/DiagnosticReports evidence/crash-reports 2>/dev/null || true
+          cat evidence/verdict.txt
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage-b-${{ matrix.leg }}
+          path: |
+            ${{ runner.temp }}/evidence
+            ${{ runner.temp }}/rwt-results
+          if-no-files-found: warn
+          retention-days: 90
