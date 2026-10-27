@@ -8,9 +8,13 @@ on:
         required: false
         default: "40"
       legs:
-        description: "Which legs to run (comma-separated: prefix,fixed)"
+        description: "DEPRECATED (unused) - matrix_json selects legs"
         required: false
-        default: "prefix,fixed"
+        default: ""
+      matrix_json:
+        description: "Matrix JSON array of legs (default: both)"
+        required: false
+        default: '[{"leg":"prefix","webkit_ref":"55d9d9007f54ee61fa38accb59cd88a8d4075847"},{"leg":"fixed","webkit_ref":"2df698f59386b2ffccd45c7ef28422b69eba8c44"}]'
 
 permissions: {}
 
@@ -32,15 +36,10 @@ jobs:
     # depending on runner contention (v2 prefix leg hit the old 350m cap
     # mid-build and was cancelled). 358m leaves test time inside the cap.
     timeout-minutes: 358
-    if: contains(github.event.inputs.legs || 'prefix,fixed', matrix.leg)
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - leg: prefix
-            webkit_ref: "55d9d9007f54ee61fa38accb59cd88a8d4075847"
-          - leg: fixed
-            webkit_ref: "2df698f59386b2ffccd45c7ef28422b69eba8c44"
+        include: ${{ fromJSON(inputs.matrix_json) }}
     steps:
       - name: Host + toolchain report
         run: |
