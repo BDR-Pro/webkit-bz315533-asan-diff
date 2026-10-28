@@ -7,11 +7,11 @@ on:
         description: "Matrix JSON array of legs (leg, webkit_ref, san, iterations)"
         required: false
         default: >-
-          [{"leg":"prefix","webkit_ref":"55d9d9007f54ee61fa38accb59cd88a8d4075847","san":"debug","iterations":"12"},
-           {"leg":"fixed","webkit_ref":"2df698f59386b2ffccd45c7ef28422b69eba8c44","san":"debug","iterations":"12"},
-           {"leg":"prefix","webkit_ref":"55d9d9007f54ee61fa38accb59cd88a8d4075847","san":"tsan","iterations":"12"},
-           {"leg":"fixed","webkit_ref":"2df698f59386b2ffccd45c7ef28422b69eba8c44","san":"tsan","iterations":"12"},
-           {"leg":"prefix","webkit_ref":"55d9d9007f54ee61fa38accb59cd88a8d4075847","san":"asan","iterations":"40"}]
+          [{"leg":"prefix","webkit_ref":"7112f9e6983cb089eba9ee52a0cdd886781a5d55","san":"asan","iterations":"20"},
+           {"leg":"fixed","webkit_ref":"f53d1f284bc24a25bd9d0e35d3c6d1e7987be57b","san":"asan","iterations":"20"},
+           {"leg":"prefix","webkit_ref":"7112f9e6983cb089eba9ee52a0cdd886781a5d55","san":"debug","iterations":"12"},
+           {"leg":"fixed","webkit_ref":"f53d1f284bc24a25bd9d0e35d3c6d1e7987be57b","san":"debug","iterations":"12"},
+           {"leg":"prefix","webkit_ref":"7112f9e6983cb089eba9ee52a0cdd886781a5d55","san":"interpose","iterations":"12"}]
 
 permissions: {}
 
@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  WEBKIT_FIX_REF: "2df698f59386b2ffccd45c7ef28422b69eba8c44"
+  WEBKIT_FIX_REF: "f53d1f284bc24a25bd9d0e35d3c6d1e7987be57b"
   TEST_PATH: "fast/scrolling/mac/event-dispatcher-timer-close-crash.html"
   IFRAME_TEST_PATH: "fast/scrolling/mac/event-dispatcher-timer-iframe-crash.html"
   ASAN_OPTIONS: "detect_leaks=0"
@@ -67,14 +67,26 @@ jobs:
           git checkout FETCH_HEAD
           echo "HEAD: $(git rev-parse HEAD)"
 
-      - name: Import regression test from the fix commit (absent at parent)
+      # v1-v3 CORRECTION: the GitHub mirror commit 2df698f5 (2026-08-23)
+      # only ADDED the regression test; the actual source fix is
+      # f53d1f284bc2 (BZ 318088, 2026-07-03) and its parent 7112f9e6 is the
+      # true pre-fix revision. Earlier stages pinned 55d9d900 as "prefix",
+      # which already CONTAINS the fix - every prior leg was fixed-vs-fixed.
+      - name: Import regression test from the fix commit (absent at true parent)
         if: matrix.leg == 'prefix'
         run: |
           cd "$RUNNER_TEMP/webkit"
-          git -c protocol.version=2 fetch --depth 1 origin "$WEBKIT_FIX_REF"
+          git -c protocol.version=2 fetch --depth 2 origin "$WEBKIT_FIX_REF"
           git checkout FETCH_HEAD -- \
             "LayoutTests/$TEST_PATH" \
-            "LayoutTests/fast/scrolling/mac/event-dispatcher-timer-close-crash-expected.txt"
+            "LayoutTests/fast/scrolling/mac/event-dispatcher-timer-close-crash-expected.txt" || {
+              # test may not exist at f53d1f28 either; import from 2df698f
+              git -c protocol.version=2 fetch --depth 1 origin \
+                "2df698f59386b2ffccd45c7ef28422b69eba8c44"
+              git checkout FETCH_HEAD -- \
+                "LayoutTests/$TEST_PATH" \
+                "LayoutTests/fast/scrolling/mac/event-dispatcher-timer-close-crash-expected.txt"
+            }
           ls -la LayoutTests/fast/scrolling/mac/event-dispatcher-timer-close-crash*
 
       - name: Build-dir markers (sanitizer routing)
@@ -91,6 +103,13 @@ jobs:
           cat WebKitBuild/Configuration
           ls WebKitBuild/
 
+      - name: Apply WK_INTERPOSE_EXPERIMENT patch (interpose leg only)
+        if: matrix.san == 'interpose'
+        run: |
+          cd "$RUNNER_TEMP/webkit"
+          rm -f /tmp/wk-interpose-log.txt
+          python3 "$GITHUB_WORKSPACE/patches/315533-interpose.py"
+
       - name: Build WebKit (${{ matrix.san }}, Mac)
         run: |
           cd "$RUNNER_TEMP/webkit"
@@ -102,15 +121,6 @@ jobs:
             Tools/Scripts/build-webkit --release --asan
           fi
 
-      # v3 lesson: the pre-fix timer is DESTROYED ON THE MAIN THREAD while its
-      # run loop is the SCROLLING thread's. ~TimerBase asserts
-      # RunLoop::isCurrent() (RELEASE_ASSERT, RunLoop.h assertIsCurrent)
-      # in Debug builds -> a Debug parent build should abort DETERMINISTICALLY
-      # whenever the timer is armed at teardown, no race-window luck needed.
-      # The fixed build destroys the timer ON the scrolling thread -> clean.
-      # TSan additionally detects unsynchronized member writes (lazy creation
-      # on the scrolling thread vs teardown on the main thread) as data races,
-      # broader than the ASan free/use window.
       - name: Copy iframe-variant test into the tree
         run: |
           cd "$RUNNER_TEMP/webkit"
@@ -155,15 +165,11 @@ jobs:
           EOF
           ls -la "LayoutTests/$IFRAME_TEST_PATH"
 
-      - name: Run both tests N times (WebKitTestRunner) under CPU pressure
+      - name: Run both tests N times (WebKitTestRunner)
         continue-on-error: true
         run: |
           cd "$RUNNER_TEMP/webkit"
           mkdir -p "$RUNNER_TEMP/iterations"
-          # Scheduler pressure: oversubscribe the runner so the scrolling
-          # thread is more likely to be preempted mid-callback (race amplifier).
-          SPIN_PIDS=""
-          for s in 1 2 3 4; do yes > /dev/null 2>&1 & SPIN_PIDS="$SPIN_PIDS $!"; done
           pass=0; nonpass=0
           for i in $(seq 1 "$LEG_ITERATIONS"); do
             for TEST in "$TEST_PATH" "$IFRAME_TEST_PATH"; do
@@ -184,7 +190,6 @@ jobs:
               echo "iteration=$i test=$TEST rc=$rc verdict=$VERDICT" >> "$RUNNER_TEMP/iterations/log.txt"
             done
           done
-          kill $SPIN_PIDS 2>/dev/null || true
           echo "TOTAL pass=$pass nonpass=$nonpass (x2 tests x $LEG_ITERATIONS iterations)"
           echo "TOTAL pass=$pass nonpass=$nonpass (x2 tests x $LEG_ITERATIONS iterations)" >> "$RUNNER_TEMP/iterations/log.txt"
 
@@ -197,11 +202,14 @@ jobs:
             echo "=== leg=${{ matrix.leg }} san=${{ matrix.san }} webkit_ref=${{ matrix.webkit_ref }} ==="
             date
             echo
-            echo "--- iteration verdict log (tally) ---"
+            echo "--- iteration verdict log ---"
             sort iterations/log.txt 2>/dev/null | uniq -c | sort -rn | head -20
             echo
-            echo "--- ASan / TSan / assert frame greps over ALL iteration output ---"
-            grep -rEai "heap-use-after-free|use-after-poison|ERROR: AddressSanitizer|WARNING: ThreadSanitizer|ThreadSanitizer:|data race|assertion|ASSERT.*failed|__invoke|TimerBase|RemoteLayerTreeEventDispatcher|scheduleDelayedRenderingUpdateDetectionTimer" \
+            echo "--- WK-INTERPOSE log (the primitive oracle) ---"
+            cat /tmp/wk-interpose-log.txt 2>/dev/null || echo "(no interpose log)"
+            echo
+            echo "--- ASan / TSan / assert frame greps ---"
+            grep -rEai "heap-use-after-free|use-after-poison|ERROR: AddressSanitizer|WARNING: ThreadSanitizer|data race|ASSERTION|assertion|__invoke|TimerBase|RemoteLayerTreeEventDispatcher|scheduleDelayedRenderingUpdateDetectionTimer" \
               iterations 2>/dev/null | head -400
             echo
             echo "--- any non-pass full_results ---"
@@ -212,12 +220,13 @@ jobs:
               fi
             done
             echo
-            echo "--- crash-log files found ---"
+            echo "--- crash-log files ---"
             find iterations \( -name "*crash-log*" -o -name "*stderr*" \) 2>/dev/null | head -40
             echo
-            echo "--- macOS DiagnosticReports (top 10) ---"
+            echo "--- macOS DiagnosticReports ---"
             ls -lt ~/Library/Logs/DiagnosticReports 2>/dev/null | head -11
           } > evidence/verdict.txt 2>&1
+          cp /tmp/wk-interpose-log.txt evidence/ 2>/dev/null || true
           cp -R ~/Library/Logs/DiagnosticReports evidence/crash-reports 2>/dev/null || true
           cat evidence/verdict.txt || true
           exit 0
@@ -226,7 +235,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: stage-b-v4-${{ matrix.leg }}-${{ matrix.san }}
+          name: stage-b-v5-${{ matrix.leg }}-${{ matrix.san }}
           path: |
             ${{ runner.temp }}/evidence
             ${{ runner.temp }}/iterations
