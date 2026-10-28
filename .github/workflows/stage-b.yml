@@ -117,6 +117,11 @@ jobs:
             Tools/Scripts/build-webkit --debug
           elif [ "${{ matrix.san }}" = "tsan" ]; then
             Tools/Scripts/build-webkit --release --tsan
+          elif [ "${{ matrix.san }}" = "interpose" ]; then
+            # NO sanitizer: ASan quarantine would block the immediate
+            # same-slot reclaim the interpose leg demonstrates (tcache
+            # LIFO reuse of the freed 64B chunk is the primitive).
+            Tools/Scripts/build-webkit --release
           else
             Tools/Scripts/build-webkit --release --asan
           fi
