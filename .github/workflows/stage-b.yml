@@ -153,11 +153,11 @@ jobs:
           for i in $(seq 1 "$ITERATIONS"); do
             for TEST in "$TEST_PATH" "$IFRAME_TEST_PATH"; do
               TAG="$(echo "$TEST" | tr '/' '_')"
+              rc=0
               Tools/Scripts/run-webkit-tests "$TEST" \
                 --no-build --no-show-results --no-retry \
                 --results-dir "$RUNNER_TEMP/iterations/run${i}-${TAG}" \
-                >/dev/null 2>&1
-              rc=$?
+                >/dev/null 2>&1 || rc=$?
               RES="$RUNNER_TEMP/iterations/run${i}-${TAG}/full_results.json"
               VERDICT="unknown"
               if grep -q '"num_regressions":0' "$RES" 2>/dev/null && grep -q '"num_passes":1' "$RES" 2>/dev/null; then
