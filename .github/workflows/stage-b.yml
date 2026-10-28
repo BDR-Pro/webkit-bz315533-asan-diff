@@ -8,9 +8,9 @@ on:
         required: false
         default: >-
           [{"leg":"prefix","webkit_ref":"7112f9e6983cb089eba9ee52a0cdd886781a5d55","san":"asan","iterations":"20"},
-           {"leg":"fixed","webkit_ref":"f53d1f284bc24a25bd9d0e35d3c6d1e7987be57b","san":"asan","iterations":"20"},
+           {"leg":"fixed","webkit_ref":"f53d1f284bc24887cb00783ef8aee9e35809b8bc","san":"asan","iterations":"20"},
            {"leg":"prefix","webkit_ref":"7112f9e6983cb089eba9ee52a0cdd886781a5d55","san":"debug","iterations":"12"},
-           {"leg":"fixed","webkit_ref":"f53d1f284bc24a25bd9d0e35d3c6d1e7987be57b","san":"debug","iterations":"12"},
+           {"leg":"fixed","webkit_ref":"f53d1f284bc24887cb00783ef8aee9e35809b8bc","san":"debug","iterations":"12"},
            {"leg":"prefix","webkit_ref":"7112f9e6983cb089eba9ee52a0cdd886781a5d55","san":"interpose","iterations":"12"}]
 
 permissions: {}
@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  WEBKIT_FIX_REF: "f53d1f284bc24a25bd9d0e35d3c6d1e7987be57b"
+  WEBKIT_FIX_REF: "f53d1f284bc24887cb00783ef8aee9e35809b8bc"
   TEST_PATH: "fast/scrolling/mac/event-dispatcher-timer-close-crash.html"
   IFRAME_TEST_PATH: "fast/scrolling/mac/event-dispatcher-timer-iframe-crash.html"
   ASAN_OPTIONS: "detect_leaks=0"
