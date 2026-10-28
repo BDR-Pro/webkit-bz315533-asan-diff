@@ -113,17 +113,19 @@ jobs:
       - name: Build WebKit (${{ matrix.san }}, Mac)
         run: |
           cd "$RUNNER_TEMP/webkit"
+          # NOTE: at these revisions webkitdirs reads ONLY the
+          # WebKitBuild/ASan and WebKitBuild/TSan marker files
+          # (determineASanIsEnabled/determineTSanIsEnabled); --asan/--tsan
+          # are NOT build-webkit CLI flags and get passed through to
+          # xcodebuild (which rejects them). The marker steps above are
+          # what routes the sanitizer. --debug/--release select config only.
           if [ "${{ matrix.san }}" = "debug" ]; then
             Tools/Scripts/build-webkit --debug
-          elif [ "${{ matrix.san }}" = "tsan" ]; then
-            Tools/Scripts/build-webkit --release --tsan
-          elif [ "${{ matrix.san }}" = "interpose" ]; then
-            # NO sanitizer: ASan quarantine would block the immediate
-            # same-slot reclaim the interpose leg demonstrates (tcache
-            # LIFO reuse of the freed 64B chunk is the primitive).
-            Tools/Scripts/build-webkit --release
           else
-            Tools/Scripts/build-webkit --release --asan
+            # asan/tsan/interpose: Release + marker-file sanitizer routing.
+            # interpose writes no marker -> plain Release (ASan quarantine
+            # would block the same-slot reclaim the leg demonstrates).
+            Tools/Scripts/build-webkit --release
           fi
 
       - name: Copy iframe-variant test into the tree
