@@ -3,18 +3,15 @@ name: stage-b-315533
 on:
   workflow_dispatch:
     inputs:
-      iterations:
-        description: "Test iterations per leg (the race is timing-dependent)"
-        required: false
-        default: "40"
-      legs:
-        description: "DEPRECATED (unused) - matrix_json selects legs"
-        required: false
-        default: ""
       matrix_json:
-        description: "Matrix JSON array of legs (default: both)"
+        description: "Matrix JSON array of legs (leg, webkit_ref, san, iterations)"
         required: false
-        default: '[{"leg":"prefix","webkit_ref":"55d9d9007f54ee61fa38accb59cd88a8d4075847"},{"leg":"fixed","webkit_ref":"2df698f59386b2ffccd45c7ef28422b69eba8c44"}]'
+        default: >-
+          [{"leg":"prefix","webkit_ref":"55d9d9007f54ee61fa38accb59cd88a8d4075847","san":"debug","iterations":"12"},
+           {"leg":"fixed","webkit_ref":"2df698f59386b2ffccd45c7ef28422b69eba8c44","san":"debug","iterations":"12"},
+           {"leg":"prefix","webkit_ref":"55d9d9007f54ee61fa38accb59cd88a8d4075847","san":"tsan","iterations":"12"},
+           {"leg":"fixed","webkit_ref":"2df698f59386b2ffccd45c7ef28422b69eba8c44","san":"tsan","iterations":"12"},
+           {"leg":"prefix","webkit_ref":"55d9d9007f54ee61fa38accb59cd88a8d4075847","san":"asan","iterations":"40"}]
 
 permissions: {}
 
@@ -30,16 +27,17 @@ env:
 
 jobs:
   asan-differential:
-    name: "ASan differential - ${{ matrix.leg }}"
+    name: "Stage B - ${{ matrix.leg }} - ${{ matrix.san }}"
     runs-on: macos-26
-    # GitHub-hosted runners hard-cap jobs at 6h; build alone takes 4.5-5.7h
-    # depending on runner contention (v2 prefix leg hit the old 350m cap
-    # mid-build and was cancelled). 358m leaves test time inside the cap.
+    # GitHub-hosted runners hard-cap jobs at 6h; builds take 4.5-5.7h.
     timeout-minutes: 358
     strategy:
       fail-fast: false
+      max-parallel: 5
       matrix:
         include: ${{ fromJSON(inputs.matrix_json) }}
+    env:
+      LEG_ITERATIONS: ${{ matrix.iterations }}
     steps:
       - name: Host + toolchain report
         run: |
@@ -50,9 +48,7 @@ jobs:
           xcodebuild -version
           sysctl -n hw.ncpu hw.memsize
           cmake --version | head -1
-          python3 --version
           perl -v | sed -n '2p'
-          ruby --version || true
 
       - name: Ensure ninja
         run: |
@@ -81,23 +77,40 @@ jobs:
             "LayoutTests/fast/scrolling/mac/event-dispatcher-timer-close-crash-expected.txt"
           ls -la LayoutTests/fast/scrolling/mac/event-dispatcher-timer-close-crash*
 
-      - name: Build-dir markers (Release + ASan routing)
+      - name: Build-dir markers (sanitizer routing)
         run: |
           cd "$RUNNER_TEMP/webkit"
           mkdir -p WebKitBuild
-          printf 'Release\n' > WebKitBuild/Configuration
-          printf 'YES\n' > WebKitBuild/ASan
-          grep -n "cmake-mac" Tools/Scripts/webkitdirs.pm | head -3 || true
+          if [ "${{ matrix.san }}" = "debug" ]; then
+            printf 'Debug\n' > WebKitBuild/Configuration
+          else
+            printf 'Release\n' > WebKitBuild/Configuration
+            if [ "${{ matrix.san }}" = "asan" ]; then printf 'YES\n' > WebKitBuild/ASan; fi
+            if [ "${{ matrix.san }}" = "tsan" ]; then printf 'YES\n' > WebKitBuild/TSan; fi
+          fi
+          cat WebKitBuild/Configuration
+          ls WebKitBuild/
 
-      - name: Build WebKit (Release + ASan, Mac)
+      - name: Build WebKit (${{ matrix.san }}, Mac)
         run: |
           cd "$RUNNER_TEMP/webkit"
-          Tools/Scripts/build-webkit --release --asan
+          if [ "${{ matrix.san }}" = "debug" ]; then
+            Tools/Scripts/build-webkit --debug
+          elif [ "${{ matrix.san }}" = "tsan" ]; then
+            Tools/Scripts/build-webkit --release --tsan
+          else
+            Tools/Scripts/build-webkit --release --asan
+          fi
 
-      # Single-run v1 (2026-10-27): both legs PASSED, no ASan report, no
-      # DiagnosticReports -> the race did not hit in 30 cycles on this
-      # runner/timing. v2 repeats the test N times per leg and adds the
-      # iframe-removal variant (the shape the PS5 console repro uses).
+      # v3 lesson: the pre-fix timer is DESTROYED ON THE MAIN THREAD while its
+      # run loop is the SCROLLING thread's. ~TimerBase asserts
+      # RunLoop::isCurrent() (RELEASE_ASSERT, RunLoop.h assertIsCurrent)
+      # in Debug builds -> a Debug parent build should abort DETERMINISTICALLY
+      # whenever the timer is armed at teardown, no race-window luck needed.
+      # The fixed build destroys the timer ON the scrolling thread -> clean.
+      # TSan additionally detects unsynchronized member writes (lazy creation
+      # on the scrolling thread vs teardown on the main thread) as data races,
+      # broader than the ASan free/use window.
       - name: Copy iframe-variant test into the tree
         run: |
           cd "$RUNNER_TEMP/webkit"
@@ -142,15 +155,17 @@ jobs:
           EOF
           ls -la "LayoutTests/$IFRAME_TEST_PATH"
 
-      - name: Run both tests N times (WebKitTestRunner)
+      - name: Run both tests N times (WebKitTestRunner) under CPU pressure
         continue-on-error: true
-        env:
-          ITERATIONS: ${{ github.event.inputs.iterations || '40' }}
         run: |
           cd "$RUNNER_TEMP/webkit"
           mkdir -p "$RUNNER_TEMP/iterations"
-          pass=0; crash=0; other=0
-          for i in $(seq 1 "$ITERATIONS"); do
+          # Scheduler pressure: oversubscribe the runner so the scrolling
+          # thread is more likely to be preempted mid-callback (race amplifier).
+          SPIN_PIDS=""
+          for s in 1 2 3 4; do yes > /dev/null 2>&1 & SPIN_PIDS="$SPIN_PIDS $!"; done
+          pass=0; nonpass=0
+          for i in $(seq 1 "$LEG_ITERATIONS"); do
             for TEST in "$TEST_PATH" "$IFRAME_TEST_PATH"; do
               TAG="$(echo "$TEST" | tr '/' '_')"
               rc=0
@@ -162,17 +177,16 @@ jobs:
               VERDICT="unknown"
               if grep -q '"num_regressions":0' "$RES" 2>/dev/null && grep -q '"num_passes":1' "$RES" 2>/dev/null; then
                 VERDICT="pass"; pass=$((pass+1))
-              elif grep -Eq '"(num_regressions|num_missing)":[1-9]' "$RES" 2>/dev/null; then
-                VERDICT="nonpass"; other=$((other+1))
               else
-                VERDICT="nonpass"; other=$((other+1))
+                VERDICT="nonpass"; nonpass=$((nonpass+1))
               fi
               echo "iteration=$i test=$TEST rc=$rc verdict=$VERDICT"
               echo "iteration=$i test=$TEST rc=$rc verdict=$VERDICT" >> "$RUNNER_TEMP/iterations/log.txt"
             done
           done
-          echo "TOTAL pass=$pass nonpass=$other (x2 tests x $ITERATIONS iterations)"
-          echo "TOTAL pass=$pass nonpass=$other (x2 tests x $ITERATIONS iterations)" >> "$RUNNER_TEMP/iterations/log.txt"
+          kill $SPIN_PIDS 2>/dev/null || true
+          echo "TOTAL pass=$pass nonpass=$nonpass (x2 tests x $LEG_ITERATIONS iterations)"
+          echo "TOTAL pass=$pass nonpass=$nonpass (x2 tests x $LEG_ITERATIONS iterations)" >> "$RUNNER_TEMP/iterations/log.txt"
 
       - name: Verdict + evidence collection
         if: always()
@@ -180,15 +194,14 @@ jobs:
           cd "$RUNNER_TEMP"
           mkdir -p evidence
           {
-            echo "=== leg=${{ matrix.leg }} webkit_ref=${{ matrix.webkit_ref }} ==="
+            echo "=== leg=${{ matrix.leg }} san=${{ matrix.san }} webkit_ref=${{ matrix.webkit_ref }} ==="
             date
             echo
-            echo "--- iteration verdict log ---"
-            cat iterations/log.txt 2>/dev/null | sort | uniq -c | sort -rn | head -20
-            cat iterations/log.txt 2>/dev/null | head -200
+            echo "--- iteration verdict log (tally) ---"
+            sort iterations/log.txt 2>/dev/null | uniq -c | sort -rn | head -20
             echo
-            echo "--- ASan / UAF frame greps over ALL iteration output ---"
-            grep -rEai "heap-use-after-free|ERROR: AddressSanitizer|__invoke|TimerBase|RemoteLayerTreeEventDispatcher|scheduleDelayedRenderingUpdateDetectionTimer" \
+            echo "--- ASan / TSan / assert frame greps over ALL iteration output ---"
+            grep -rEai "heap-use-after-free|use-after-poison|ERROR: AddressSanitizer|WARNING: ThreadSanitizer|ThreadSanitizer:|data race|assertion|ASSERT.*failed|__invoke|TimerBase|RemoteLayerTreeEventDispatcher|scheduleDelayedRenderingUpdateDetectionTimer" \
               iterations 2>/dev/null | head -400
             echo
             echo "--- any non-pass full_results ---"
@@ -198,6 +211,9 @@ jobs:
                 echo "===== $d ====="; sed -n '1,80p' "$d/full_results.json" 2>/dev/null
               fi
             done
+            echo
+            echo "--- crash-log files found ---"
+            find iterations \( -name "*crash-log*" -o -name "*stderr*" \) 2>/dev/null | head -40
             echo
             echo "--- macOS DiagnosticReports (top 10) ---"
             ls -lt ~/Library/Logs/DiagnosticReports 2>/dev/null | head -11
@@ -210,7 +226,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: stage-b-${{ matrix.leg }}
+          name: stage-b-v4-${{ matrix.leg }}-${{ matrix.san }}
           path: |
             ${{ runner.temp }}/evidence
             ${{ runner.temp }}/iterations
