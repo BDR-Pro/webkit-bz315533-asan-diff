@@ -60,7 +60,7 @@ static void wkInterposeLog(const char* tag)
     // No libc string/buffer functions: WebKit builds with
     // -Werror,-Wunsafe-buffer-usage-in-libc-call. Fixed tag strings only.
     const char* prefix = "WK-INTERPOSE ";
-    const char* newline = "\n";
+    const char* newline = "\\n";
     struct iovec iov[3];
     iov[0].iov_base = const_cast<char*>(prefix);
     iov[0].iov_len = 13;
