@@ -124,18 +124,18 @@ RemoteLayerTreeEventDispatcher::RemoteLayerTreeEventDispatcher(RemoteScrollingCo
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/uio.h>
-#include <string.h>
-static void wkInterposeLog(const char* tag)
+static void wkInterposeLog(const char* tag, unsigned long tagLen)
 {
-    // No libc string/buffer functions: WebKit builds with
-    // -Werror,-Wunsafe-buffer-usage-in-libc-call. Fixed tag strings only.
+    // Zero libc string/buffer functions: WebKit builds with
+    // -Werror,-Wunsafe-buffer-usage-in-libc-call. Lengths are hardcoded
+    // at the call sites (fixed tag literals), writev does the rest.
     const char* prefix = "WK-INTERPOSE ";
     const char* newline = "\n";
     struct iovec iov[3];
     iov[0].iov_base = const_cast<char*>(prefix);
     iov[0].iov_len = 13;
     iov[1].iov_base = const_cast<char*>(tag);
-    iov[1].iov_len = strlen(tag);
+    iov[1].iov_len = tagLen;
     iov[2].iov_base = const_cast<char*>(newline);
     iov[2].iov_len = 1;
     int fd = open("/tmp/wk-interpose-log.txt", O_WRONLY | O_CREAT | O_APPEND, 0644);
@@ -144,7 +144,7 @@ static void wkInterposeLog(const char* tag)
         close(fd);
     }
 }
-static void wkInterposeHit() { wkInterposeLog("HIT"); }
+static void wkInterposeHit() { wkInterposeLog("HIT", 3); }
 static void* wkInterposeFakeVtable[16] = {
     (void*)&wkInterposeHit, (void*)&wkInterposeHit, (void*)&wkInterposeHit,
     (void*)&wkInterposeHit, (void*)&wkInterposeHit, (void*)&wkInterposeHit,
@@ -161,7 +161,7 @@ RemoteLayerTreeEventDispatcher::~RemoteLayerTreeEventDispatcher()
     ASSERT(!m_displayRefreshObserverID);
     if (m_delayedRenderingUpdateDetectionTimer) {
         auto* raw = m_delayedRenderingUpdateDetectionTimer.release();
-        wkInterposeLog("TEARDOWN-FREE");
+        wkInterposeLog("TEARDOWN-FREE", 13);
         delete raw; // pre-fix: destroyed on the MAIN thread while the
                     // scrolling thread's CFRunLoopTimer callback may be
                     // in flight holding this raw pointer as context.
@@ -177,7 +177,7 @@ RemoteLayerTreeEventDispatcher::~RemoteLayerTreeEventDispatcher()
             fake->vptr = (void*)&wkInterposeFakeVtable;      // controlled vptr
             for (auto& byte : fake->payload)                 // attacker-influenced bytes
                 byte = 0x41;
-            wkInterposeLog("SLOT-RECLAIMED");
+            wkInterposeLog("SLOT-RECLAIMED", 14);
         }
     }
 }
