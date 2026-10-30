@@ -102,7 +102,7 @@ jobs:
                 "LayoutTests/$TEST_PATH" \
                 "LayoutTests/${TEST_PATH%.html}-expected.txt"
             }
-          ls -la LayoutTests/fast/scrolling/mac/event-dispatcher-timer-close-crash*
+          ls -la "LayoutTests/$TEST_PATH"*
 
       - name: Build-dir markers (sanitizer routing)
         run: |
