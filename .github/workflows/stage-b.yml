@@ -8,7 +8,7 @@ on:
         required: false
         default: "fast/scrolling/mac/event-dispatcher-timer-close-crash.html"
       secondary_test_path:
-        description: "Secondary LayoutTest path (empty string = skip)"
+        description: "Secondary LayoutTest path (the string 'none' = skip)"
         required: false
         default: "fast/scrolling/mac/event-dispatcher-timer-iframe-crash.html"
       fix_ref:
@@ -34,7 +34,7 @@ concurrency:
 env:
   WEBKIT_FIX_REF: "f53d1f284bc24887cb00783ef8aee9e35809b8bc"
   TEST_PATH: ${{ inputs.test_path || 'fast/scrolling/mac/event-dispatcher-timer-close-crash.html' }}
-  SECONDARY_TEST_PATH: ${{ inputs.secondary_test_path }}
+  SECONDARY_TEST_PATH: ${{ inputs.secondary_test_path == 'none' && '' || inputs.secondary_test_path }}
   ASAN_OPTIONS: "detect_leaks=0"
 
 jobs:
@@ -103,6 +103,14 @@ jobs:
                 "LayoutTests/${TEST_PATH%.html}-expected.txt"
             }
           ls -la "LayoutTests/$TEST_PATH"*
+          if [[ "$TEST_PATH" == imported/w3c/* ]]; then
+            DST_DIR="LayoutTests/fast/css/converted"
+            mkdir -p "$DST_DIR"
+            DST_NAME="$(basename "$TEST_PATH")"
+            python3 "$GITHUB_WORKSPACE/patches/wpt2layout.py" "LayoutTests/$TEST_PATH" "$DST_DIR/$DST_NAME"
+            echo "TEST_PATH=fast/css/converted/$DST_NAME" >> "$GITHUB_ENV"
+            echo "converted WPT -> $DST_DIR/$DST_NAME (TEST_PATH overridden)"
+          fi
 
       - name: Build-dir markers (sanitizer routing)
         run: |
