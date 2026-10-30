@@ -3,6 +3,18 @@ name: stage-b-315533
 on:
   workflow_dispatch:
     inputs:
+      test_path:
+        description: "Primary LayoutTest path (relative to LayoutTests/)"
+        required: false
+        default: "fast/scrolling/mac/event-dispatcher-timer-close-crash.html"
+      secondary_test_path:
+        description: "Secondary LayoutTest path (empty string = skip)"
+        required: false
+        default: "fast/scrolling/mac/event-dispatcher-timer-iframe-crash.html"
+      fix_ref:
+        description: "Fix commit SHA (for test import; defaults to the 315533 fix)"
+        required: false
+        default: "f53d1f284bc24887cb00783ef8aee9e35809b8bc"
       matrix_json:
         description: "Matrix JSON array of legs (leg, webkit_ref, san, iterations)"
         required: false
@@ -21,8 +33,8 @@ concurrency:
 
 env:
   WEBKIT_FIX_REF: "f53d1f284bc24887cb00783ef8aee9e35809b8bc"
-  TEST_PATH: "fast/scrolling/mac/event-dispatcher-timer-close-crash.html"
-  IFRAME_TEST_PATH: "fast/scrolling/mac/event-dispatcher-timer-iframe-crash.html"
+  TEST_PATH: ${{ inputs.test_path || 'fast/scrolling/mac/event-dispatcher-timer-close-crash.html' }}
+  SECONDARY_TEST_PATH: ${{ inputs.secondary_test_path }}
   ASAN_OPTIONS: "detect_leaks=0"
 
 jobs:
@@ -79,16 +91,16 @@ jobs:
         if: matrix.leg == 'prefix'
         run: |
           cd "$RUNNER_TEMP/webkit"
-          git -c protocol.version=2 fetch --depth 2 origin "$WEBKIT_FIX_REF"
+          git -c protocol.version=2 fetch --depth 2 origin "${{ inputs.fix_ref || env.WEBKIT_FIX_REF }}"
           git checkout FETCH_HEAD -- \
             "LayoutTests/$TEST_PATH" \
-            "LayoutTests/fast/scrolling/mac/event-dispatcher-timer-close-crash-expected.txt" || {
+            "LayoutTests/${TEST_PATH%.html}-expected.txt" || {
               # test may not exist at f53d1f28 either; import from 2df698f
               git -c protocol.version=2 fetch --depth 1 origin \
-                "2df698f59386b2ffccd45c7ef28422b69eba8c44"
+                "${{ inputs.fix_ref || '2df698f59386b2ffccd45c7ef28422b69eba8c44' }}"
               git checkout FETCH_HEAD -- \
                 "LayoutTests/$TEST_PATH" \
-                "LayoutTests/fast/scrolling/mac/event-dispatcher-timer-close-crash-expected.txt"
+                "LayoutTests/${TEST_PATH%.html}-expected.txt"
             }
           ls -la LayoutTests/fast/scrolling/mac/event-dispatcher-timer-close-crash*
 
@@ -132,10 +144,12 @@ jobs:
           fi
 
       - name: Copy iframe-variant test into the tree
+        if: env.SECONDARY_TEST_PATH != ''
         run: |
           cd "$RUNNER_TEMP/webkit"
-          mkdir -p "LayoutTests/$(dirname "$IFRAME_TEST_PATH")"
-          cat > "LayoutTests/$IFRAME_TEST_PATH" <<'EOF'
+          if [ -z "$SECONDARY_TEST_PATH" ]; then exit 0; fi
+          mkdir -p "LayoutTests/$(dirname "$SECONDARY_TEST_PATH")"
+          cat > "LayoutTests/$SECONDARY_TEST_PATH" <<'EOF'
           <!DOCTYPE html><!-- webkit-test-runner [ ThreadedTimeBasedAnimationsEnabled=true ] -->
           <html>
           <body>
@@ -173,7 +187,7 @@ jobs:
           </body>
           </html>
           EOF
-          ls -la "LayoutTests/$IFRAME_TEST_PATH"
+          ls -la "LayoutTests/$SECONDARY_TEST_PATH"
 
       - name: Run both tests N times (WebKitTestRunner)
         continue-on-error: true
@@ -182,7 +196,8 @@ jobs:
           mkdir -p "$RUNNER_TEMP/iterations"
           pass=0; nonpass=0
           for i in $(seq 1 "$LEG_ITERATIONS"); do
-            for TEST in "$TEST_PATH" "$IFRAME_TEST_PATH"; do
+            for TEST in "$TEST_PATH" "$SECONDARY_TEST_PATH"; do
+              [ -n "$TEST" ] || continue
               TAG="$(echo "$TEST" | tr '/' '_')"
               rc=0
               Tools/Scripts/run-webkit-tests "$TEST" \
