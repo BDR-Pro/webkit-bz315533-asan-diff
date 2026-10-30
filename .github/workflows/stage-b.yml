@@ -54,6 +54,11 @@ jobs:
       - name: Checkout harness repo (patches/)
         uses: actions/checkout@v4
 
+      - name: Resolve test paths
+        run: |
+          echo "TEST_PATH=$INPUT_TEST_PATH" >> "$GITHUB_ENV"
+          echo "resolved TEST_PATH=$INPUT_TEST_PATH"
+
       - name: Host + toolchain report
         run: |
           sw_vers
@@ -90,7 +95,6 @@ jobs:
       - name: Import regression test from the fix commit (absent at true parent)
         if: matrix.leg == 'prefix'
         run: |
-          echo "TEST_PATH=$INPUT_TEST_PATH" >> "$GITHUB_ENV"
           cd "$RUNNER_TEMP/webkit"
           git -c protocol.version=2 fetch --depth 2 origin "${{ inputs.fix_ref || env.WEBKIT_FIX_REF }}"
           git checkout FETCH_HEAD -- \
@@ -104,13 +108,26 @@ jobs:
                 "LayoutTests/${TEST_PATH%.html}-expected.txt"
             }
           ls -la "LayoutTests/$TEST_PATH"*
+
+
+      - name: Convert WPT test to classic LayoutTest (both legs)
+        run: |
+          cd "$RUNNER_TEMP/webkit"
           if [[ "$TEST_PATH" == imported/w3c/* ]]; then
+            SRC="LayoutTests/$TEST_PATH"
+            if [ ! -f "$SRC" ]; then
+              # fixed leg carries it in-tree; prefix leg imported it above
+              git -c protocol.version=2 fetch --depth 1 origin "$WEBKIT_FIX_REF" || true
+              git checkout FETCH_HEAD -- "$SRC" || true
+            fi
             DST_DIR="LayoutTests/fast/css/converted"
             mkdir -p "$DST_DIR"
             DST_NAME="$(basename "$TEST_PATH")"
-            python3 "$GITHUB_WORKSPACE/patches/wpt2layout.py" "LayoutTests/$TEST_PATH" "$DST_DIR/$DST_NAME"
+            python3 "$GITHUB_WORKSPACE/patches/wpt2layout.py" "$SRC" "$DST_DIR/$DST_NAME"
             echo "TEST_PATH=fast/css/converted/$DST_NAME" >> "$GITHUB_ENV"
             echo "converted WPT -> $DST_DIR/$DST_NAME (TEST_PATH overridden)"
+          else
+            echo "native LayoutTest: $TEST_PATH (no conversion)"
           fi
 
       - name: Build-dir markers (sanitizer routing)
