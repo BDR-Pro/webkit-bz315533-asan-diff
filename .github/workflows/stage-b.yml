@@ -182,15 +182,53 @@ jobs:
         run: |
           cd "$RUNNER_TEMP/webkit"
           mkdir -p WebKit.xcworkspace/xcshareddata/xcschemes
+          # Serial chain in LISTED ORDER (parallelizeBuildables="NO"):
+          #   1. bmalloc "All"  - copies bmalloc headers to usr/local/include
+          #   2. WTF            - explicit dep on icu (DDF3081D27C44EFE...),
+          #                       copies wtf headers AND wtf/Scripts to
+          #                       usr/local/include/wtf (attempt-6: JSC's
+          #                       Generate-Unified-Sources died on ruby
+          #                       LoadError for wtf/Scripts/generate-unified-
+          #                       source-bundles.rb before WTF ever ran)
+          #   3. JavaScriptCore framework - Headers phase materializes
+          #                       PrivateHeaders/InspectorBackendCommands.js
           cat > WebKit.xcworkspace/xcshareddata/xcschemes/JavaScriptCore.xcscheme <<'SCHEME_EOF'
           <?xml version="1.0" encoding="UTF-8"?>
           <Scheme
              LastUpgradeVersion = "1330"
              version = "1.7">
              <BuildAction
-                parallelizeBuildables = "YES"
+                parallelizeBuildables = "NO"
                 buildImplicitDependencies = "YES">
                 <BuildActionEntries>
+                   <BuildActionEntry
+                      buildForTesting = "YES"
+                      buildForRunning = "YES"
+                      buildForProfiling = "YES"
+                      buildForArchiving = "YES"
+                      buildForAnalyzing = "YES">
+                      <BuildableReference
+                         BuildableIdentifier = "primary"
+                         BlueprintIdentifier = "0F7EB8501F95504B00F1ABCB"
+                         BuildableName = "All"
+                         BlueprintName = "All"
+                         ReferencedContainer = "container:Source/bmalloc/bmalloc.xcodeproj">
+                      </BuildableReference>
+                   </BuildActionEntry>
+                   <BuildActionEntry
+                      buildForTesting = "YES"
+                      buildForRunning = "YES"
+                      buildForProfiling = "YES"
+                      buildForArchiving = "YES"
+                      buildForAnalyzing = "YES">
+                      <BuildableReference
+                         BuildableIdentifier = "primary"
+                         BlueprintIdentifier = "5D247B6114689B8600E78B76"
+                         BuildableName = "libWTF.a"
+                         BlueprintName = "WTF"
+                         ReferencedContainer = "container:Source/WTF/WTF.xcodeproj">
+                      </BuildableReference>
+                   </BuildActionEntry>
                    <BuildActionEntry
                       buildForTesting = "YES"
                       buildForRunning = "YES"
@@ -209,12 +247,12 @@ jobs:
              </BuildAction>
           </Scheme>
           SCHEME_EOF
-          echo "--- injected JavaScriptCore shared scheme (framework target) ---"
+          echo "--- injected JavaScriptCore shared scheme (bmalloc -> WTF -> JSC framework, serial)"
           CFG=Release
-          [ "${{ matrix.san }}" = "debug" ] && CFG=Debug
+          if [ "${{ matrix.san }}" = "debug" ]; then CFG=Debug; fi
           SAN=""
-          [ -f WebKitBuild/ASan ] && SAN="ENABLE_ADDRESS_SANITIZER=YES"
-          [ -f WebKitBuild/TSan ] && SAN="ENABLE_THREAD_SANITIZER=YES"
+          if [ -f WebKitBuild/ASan ]; then SAN="ENABLE_ADDRESS_SANITIZER=YES"; fi
+          if [ -f WebKitBuild/TSan ]; then SAN="ENABLE_THREAD_SANITIZER=YES"; fi
           echo "pre-build: configuration=$CFG sanitizer-flags=[$SAN]"
           set -o pipefail
           xcodebuild -scheme JavaScriptCore \
