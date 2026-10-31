@@ -181,6 +181,31 @@ jobs:
       - name: Materialize JavaScriptCore.framework (pre-build + script tolerance)
         run: |
           cd "$RUNNER_TEMP/webkit"
+          # ATTEMPT-8 DIAGNOSIS (run 41204893682): the first C++ compiles of
+          # the 2023-era tree die with the modern SDK's libc++ version guard:
+          #   __configuration/hardening.h:25: #error "_LIBCPP_ENABLE_ASSERTIONS
+          #   has been removed, please use _LIBCPP_HARDENING_MODE=<mode>"
+          # The define comes from Configurations/CommonBase.xcconfig:
+          #   WK_LIBCPP_ASSERTIONS_CFLAGS_MACOS_SINCE_1400 = -D_LIBCPP_ENABLE_ASSERTIONS=1
+          #   OTHER_CPLUSPLUSFLAGS = $(inherited) $(WK_COMMON_OTHER_CPLUSPLUSFLAGS)
+          # Earlier "successful" full-scheme runs never compiled anything:
+          # attempt-5's log contains zero CompileC lines (they were response-
+          # file writes) - the build died in script phases before compilation.
+          # Neutralize by stripping the define from the shared xcconfig:
+          # applied IDENTICALLY to prefix and fixed legs, a build-config
+          # neutralization recorded here; no-op on trunk where upstream
+          # already replaced it with _LIBCPP_HARDENING_MODE.
+          python3 - <<'PYEOF'
+          p = "Configurations/CommonBase.xcconfig"
+          s = open(p).read()
+          old = "-D_LIBCPP_ENABLE_ASSERTIONS=1"
+          n = s.count(old)
+          if n:
+              open(p, "w").write(s.replace(old, ""))
+              print(f"neutralized _LIBCPP_ENABLE_ASSERTIONS in {p}: {n} occurrence(s) removed")
+          else:
+              print("no _LIBCPP_ENABLE_ASSERTIONS in CommonBase.xcconfig (trunk?) - no patch applied")
+          PYEOF
           mkdir -p WebKit.xcworkspace/xcshareddata/xcschemes
           # Attempt-7 lesson: scheme BuildActionEntry LISTED ORDER is not a
           # scheduling constraint - xcodebuild serializes by dependency graph
