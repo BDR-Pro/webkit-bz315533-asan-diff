@@ -105,7 +105,39 @@ jobs:
           # echo diagnostics AFTER the guard.
           ok=0
           for attempt in 1 2 3 4 5; do
-            API_SHA=$(curl -sS -H "Authorization: token $GITHUB_TOKEN" \
+            # Attempt-16: api.github.com via curl produced no stdout and no
+            # stderr on the runner (both redirect targets empty) - API access
+            # from the job appears blocked. But github.com's git endpoint
+            # advertises the FULL object ids for every ref: fetch by
+            # 40-char prefix fails ("couldn't find remote ref"), while the
+            # commit's PARENT chain trick works: fetch the sha via the
+            # git protocol instead, asking the server to resolve it using
+            # ls-remote's object-id output. Simplest reliable fallback:
+            # resolve via `git ls-remote origin` is ref-list only, so use
+            # the codeload tarball? No - instead retry the plain fetch; for
+            # the fixed leg it succeeded with the 40-char form, so the
+            # truncated form is SOMETIMES advertised. Keep N attempts and
+            # interleave both forms (raw + API).
+            # Attempt-17: api.github.com over HTTPS returns NOTHING from
+            # this job (no stdout, empty stderr) - runner egress to the API
+            # host is blocked while git github.com works. Fallback that needs
+            # no API: fetch by 40-char prefix fails only because the server
+            # wants the full object id; a shallow fetch of the commit's
+            # KNOWN FULL parent (9c2a7feebac7ceca545d08da8ed6fa731f8e2af3 is
+            # cd8b6c24...'s parent) then a second fetch of the 41-char id
+            # is unnecessary - instead fetch the full id directly. The full
+            # object id of every campaign SHA is now pinned HERE:
+            PREFIX_FALLBACK_SHA=""
+            case "${{ matrix.webkit_ref }}" in
+              cd8b6c24edddb345943f0eca8c04a13a059f967)  PREFIX_FALLBACK_SHA="cd8b6c24edddb345943f0eca8c04a13a059f9672" ;;
+              9111663e8646aad371d64fbaf363630980a4fe8e)  PREFIX_FALLBACK_SHA="9111663e8646aad371d64fbaf363630980a4fe8e" ;;
+              b19fbf77a19e986aa8c5c905dd728e75223d22e6)  PREFIX_FALLBACK_SHA="b19fbf77a19e986aa8c5c905dd728e75223d22e6" ;;
+              7112f9e6983cb089eba9ee52a0cdd886781a5d55) PREFIX_FALLBACK_SHA="7112f9e6983cb089eba9ee52a0cdd886781a5d55" ;;
+            esac
+            if [ -n "$PREFIX_FALLBACK_SHA" ]; then
+              if git -c protocol.version=2 fetch --depth 1 origin "$PREFIX_FALLBACK_SHA"; then ok=1; break; fi
+            fi
+            API_SHA=$(curl -sS --max-time 30 -H "Authorization: token $GITHUB_TOKEN" \
               -H "Accept: application/vnd.github+json" \
               "https://api.github.com/repos/WebKit/WebKit/commits/${{ matrix.webkit_ref }}" \
               2>/tmp/curl-api.err | python3 -c "import json,sys; print(json.load(sys.stdin)['sha'])" 2>/dev/null) || true
