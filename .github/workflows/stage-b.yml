@@ -177,10 +177,10 @@ jobs:
               -configuration Release SYMROOT="$PWD/WebKitBuild" OBJROOT="$PWD/WebKitBuild" \
               ARCHS=arm64 ONLY_ACTIVE_ARCH=YES 2>&1 | tail -2 \
               || echo "WTF pre-build failed (continuing)"
-            xcodebuild -project Source/WebCore/WebCore.xcodeproj -target WebCore \
+            xcodebuild -project Source/JavaScriptCore/JavaScriptCore.xcodeproj -target JavaScriptCore \
               -configuration Release SYMROOT="$PWD/WebKitBuild" OBJROOT="$PWD/WebKitBuild" \
               ARCHS=arm64 ONLY_ACTIVE_ARCH=YES 2>&1 | tail -2 \
-              || echo "WebCore pre-build failed (continuing)"
+              || echo "JSC pre-build failed (continuing)"
             Tools/Scripts/build-webkit --release
           fi
 
