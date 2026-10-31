@@ -205,6 +205,22 @@ jobs:
               print(f"neutralized _LIBCPP_ENABLE_ASSERTIONS in {p}: {n} occurrence(s) removed")
           else:
               print("no _LIBCPP_ENABLE_ASSERTIONS in CommonBase.xcconfig (trunk?) - no patch applied")
+          # ATTEMPT-9: bmalloc's "Generate TAPI filelist" phase died because
+          # generate-tapi-filelist.py open()s the XCBuild header-VFS file
+          # (all-product-headers.yaml) that Xcode 26.6 no longer writes into
+          # TARGET_TEMP_DIR. The script already treats a DIRECTORY input as
+          # "walk it"; extend the same fallback to a missing path (os.walk on
+          # a nonexistent dir yields nothing -> empty filelist). TAPI
+          # install-filelists are unused by the WebKitTestRunner harness.
+          p2 = "Source/WTF/Scripts/generate-tapi-filelist.py"
+          s2 = open(p2).read()
+          old2 = "except IsADirectoryError:"
+          new2 = "except (IsADirectoryError, FileNotFoundError):  # HARNESS: Xcode 26 no longer writes the header VFS file"
+          if old2 in s2:
+              open(p2, "w").write(s2.replace(old2, new2))
+              print("patched generate-tapi-filelist.py: FileNotFoundError -> empty-header fallback")
+          else:
+              print("generate-tapi-filelist.py pattern not found (trunk?) - no patch applied")
           PYEOF
           mkdir -p WebKit.xcworkspace/xcshareddata/xcschemes
           # Attempt-7 lesson: scheme BuildActionEntry LISTED ORDER is not a
