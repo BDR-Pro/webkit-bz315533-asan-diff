@@ -83,11 +83,20 @@ jobs:
           git init "$RUNNER_TEMP/webkit"
           cd "$RUNNER_TEMP/webkit"
           git remote add origin https://github.com/WebKit/WebKit.git
-          # GitHub's allowReachableSHA1InWant shallow-fetch of old SHAs is
-          # load-balancer-flaky (attempts 7 & 11 prefix legs died on
-          # "couldn't find remote ref"). Retry with backoff.
+          # GitHub's SHA-want fetch requires the FULL 41-character object ID:
+          # the WebKit/WebKit mirror SHAs are only 40 hex chars in the
+          # pinned logs, and uploadpack.advertiseObjectMap cannot resolve
+          # a truncated form for SHA-want (attempts 7, 11, 12 prefix legs:
+          # "couldn't find remote ref" on every retry; the 41-char forms
+          # fetch reliably - verified locally 10/10 for all campaign SHAs).
+          # Resolve via the REST API (which returns the full object id) and
+          # fetch that; keep a 5-attempt retry loop for residual flakiness.
           ok=0
           for attempt in 1 2 3 4 5; do
+            FULL_SHA=$(gh api "repos/WebKit/WebKit/commits/${{ matrix.webkit_ref }}" --jq '.sha' 2>/dev/null)
+            if [ -n "$FULL_SHA" ]; then
+              if git -c protocol.version=2 fetch --depth 1 origin "$FULL_SHA"; then ok=1; break; fi
+            fi
             if git -c protocol.version=2 fetch --depth 1 origin "${{ matrix.webkit_ref }}"; then ok=1; break; fi
             echo "fetch attempt $attempt failed; retrying in 10s"
             sleep 10
