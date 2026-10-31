@@ -171,9 +171,9 @@ jobs:
           # Pre-builds are kept but now LOUD: pipefail + full exit codes.
           set -o pipefail
           if [ "${{ matrix.san }}" = "debug" ]; then
-            Tools/Scripts/build-webkit --debug -parallelizeTargets NO
+            Tools/Scripts/build-webkit --debug -parallelizeTargets=NO
           else
-            Tools/Scripts/build-webkit --release -parallelizeTargets NO
+            Tools/Scripts/build-webkit --release -parallelizeTargets=NO
           fi
 
       - name: Copy iframe-variant test into the tree
