@@ -166,6 +166,15 @@ jobs:
             # asan/tsan/interpose: Release + marker-file sanitizer routing.
             # interpose writes no marker -> plain Release (ASan quarantine
             # would block the same-slot reclaim the leg demonstrates).
+            # PHASE 0 (old revisions only): build the WTF project alone so
+            # its headers land in WebKitBuild/Release/usr/local/include
+            # BEFORE JavaScriptCore's Generate-Unified-Sources phase runs
+            # (Xcode 26 parallel scheduling lets JSC race ahead on 2023-era
+            # trees; trunk builds fine without this).
+            xcodebuild -project Source/WTF/WTF.xcodeproj -target WTF \
+              -configuration Release SYMROOT="$PWD/WebKitBuild" OBJROOT="$PWD/WebKitBuild" \
+              ARCHS=arm64 ONLY_ACTIVE_ARCH=YES 2>&1 | tail -2 \
+              || echo "WTF pre-build failed (2026 trunk trees don't need it; continuing)"
             Tools/Scripts/build-webkit --release
           fi
 
