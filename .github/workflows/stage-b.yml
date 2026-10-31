@@ -99,13 +99,18 @@ jobs:
           # curl (gh CLI is not authenticated in this job's runner context -
           # attempt-13 died with exit code 4 on the gh api call; curl + the
           # GITHUB_TOKEN works for public repos).
+          # NOTE: the multi-line curl pipeline assignments are executed with
+          # bash -e; guard the whole assignment with `|| true` so a failed
+          # API call leaves API_SHA empty instead of aborting the step, and
+          # echo diagnostics AFTER the guard.
           ok=0
           for attempt in 1 2 3 4 5; do
-            API_SHA=$(curl -sf -H "Authorization: token $GITHUB_TOKEN" \
+            API_SHA=$(curl -sS -H "Authorization: token $GITHUB_TOKEN" \
               -H "Accept: application/vnd.github+json" \
               "https://api.github.com/repos/WebKit/WebKit/commits/${{ matrix.webkit_ref }}" \
-              | python3 -c "import json,sys; print(json.load(sys.stdin)['sha'])" 2>/dev/null)
+              2>/tmp/curl-api.err | python3 -c "import json,sys; print(json.load(sys.stdin)['sha'])" 2>/dev/null) || true
             echo "attempt $attempt: API resolved SHA = ${API_SHA:-<none>}"
+            if [ -s /tmp/curl-api.err ]; then echo "curl stderr: $(cat /tmp/curl-api.err)"; fi
             if [ -n "$API_SHA" ] && git -c protocol.version=2 fetch --depth 1 origin "$API_SHA"; then ok=1; break; fi
             if git -c protocol.version=2 fetch --depth 1 origin "${{ matrix.webkit_ref }}"; then ok=1; break; fi
             echo "fetch attempt $attempt failed; retrying in 10s"
