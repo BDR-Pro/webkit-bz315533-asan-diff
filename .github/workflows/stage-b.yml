@@ -25,7 +25,13 @@ on:
            {"leg":"fixed","webkit_ref":"f53d1f284bc24887cb00783ef8aee9e35809b8bc","san":"debug","iterations":"12"},
            {"leg":"prefix","webkit_ref":"7112f9e6983cb089eba9ee52a0cdd886781a5d55","san":"interpose","iterations":"12"}]
 
-permissions: {}
+# The clone step resolves full 41-char object ids via the REST API using
+# curl + GITHUB_TOKEN; contents: read is the minimum that lets the token
+# hit public-repo commit endpoints (attempt-14: with permissions: {} the
+# token cannot call api.github.com at all - curl -sf fails silently, the
+# fallback raw-40-char fetch fails deterministically, exit 1).
+permissions:
+  contents: read
 
 concurrency:
   group: stage-b-315533
