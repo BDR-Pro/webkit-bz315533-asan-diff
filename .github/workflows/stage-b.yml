@@ -398,7 +398,7 @@ jobs:
             ARCHS=arm64 SDKROOT=macosx \
             -parallelizeTargets=NO build > /tmp/wtf-prebuild.log 2>&1 || {
               echo "WTF pre-build FAILED; tail follows:"
-              tail -150 /tmp/wtf-prebuild.log
+              tail -400 /tmp/wtf-prebuild.log
               exit 1
             }
           echo "--- WTF pre-build OK; wtf/Scripts populated:"
@@ -420,7 +420,7 @@ jobs:
             ARCHS=arm64 SDKROOT=macosx \
             -parallelizeTargets=NO build > /tmp/jscore-prebuild.log 2>&1 || {
               echo "JSC workspace pre-build FAILED; tail follows:"
-              tail -150 /tmp/jscore-prebuild.log
+              tail -400 /tmp/jscore-prebuild.log
             }
           echo "--- PrivateHeaders after pre-build:"
           ls -la WebKitBuild/$CFG/JavaScriptCore.framework/Versions/A/PrivateHeaders/ 2>/dev/null || echo "(framework PrivateHeaders not present - relying on fallback patch)"
