@@ -343,6 +343,8 @@ jobs:
             -configuration "$CFG" \
             $SAN \
             GCC_TREAT_WARNINGS_AS_ERRORS=NO \
+            OTHER_CPLUSPLUSFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw -Wno-offsetof' \
+            OTHER_CFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw' \
             SYMROOT="$PWD/WebKitBuild" \
             OBJROOT="$PWD/WebKitBuild" \
             SHARED_PRECOMPS_DIR="$PWD/WebKitBuild/PrecompiledHeaders" \
@@ -362,6 +364,8 @@ jobs:
             -configuration "$CFG" \
             $SAN \
             GCC_TREAT_WARNINGS_AS_ERRORS=NO \
+            OTHER_CPLUSPLUSFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw -Wno-offsetof' \
+            OTHER_CFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw' \
             SYMROOT="$PWD/WebKitBuild" \
             OBJROOT="$PWD/WebKitBuild" \
             SHARED_PRECOMPS_DIR="$PWD/WebKitBuild/PrecompiledHeaders" \
@@ -409,11 +413,20 @@ jobs:
           # restoring serial ordering everywhere. Slower but correct for
           # old trees; harmless (slightly slower) for trunk.
           # Pre-builds are kept but now LOUD: pipefail + full exit codes.
+          # ATTEMPT-13: clang 21 (Xcode 26.6) makes the C++26
+          # strict-template-keyword rule a DEFAULT ERROR
+          # (-Wmissing-template-arg-list-after-template-kw fires as an
+          # error regardless of GCC_TREAT_WARNINGS_AS_ERRORS, killing
+          # JSCast.h/LLIntData.h compiles in both the JSC prebuild and the
+          # full build). Disabled via OTHER_CPLUSPLUSFLAGS/OTHER_CFLAGS
+          # overrides with $(inherited) preserved, applied IDENTICALLY on
+          # prefix and fixed legs - diagnostics-class only, zero codegen
+          # effect. Also drops -Winvalid-offsetof (same class).
           set -o pipefail
           if [ "${{ matrix.san }}" = "debug" ]; then
-            Tools/Scripts/build-webkit --debug -parallelizeTargets=NO GCC_TREAT_WARNINGS_AS_ERRORS=NO
+            Tools/Scripts/build-webkit --debug -parallelizeTargets=NO GCC_TREAT_WARNINGS_AS_ERRORS=NO OTHER_CPLUSPLUSFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw -Wno-offsetof' OTHER_CFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw'
           else
-            Tools/Scripts/build-webkit --release -parallelizeTargets=NO GCC_TREAT_WARNINGS_AS_ERRORS=NO
+            Tools/Scripts/build-webkit --release -parallelizeTargets=NO GCC_TREAT_WARNINGS_AS_ERRORS=NO OTHER_CPLUSPLUSFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw -Wno-offsetof' OTHER_CFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw'
           fi
 
       - name: Copy iframe-variant test into the tree
