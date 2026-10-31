@@ -381,6 +381,7 @@ jobs:
             GCC_TREAT_WARNINGS_AS_ERRORS=NO \
             OTHER_CPLUSPLUSFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw -Wno-offsetof' \
             OTHER_CFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw' \
+            OTHER_TAPIFLAGS='-Wno-missing-template-arg-list-after-template-kw -Wno-offsetof' \
             SYMROOT="$PWD/WebKitBuild" \
             OBJROOT="$PWD/WebKitBuild" \
             SHARED_PRECOMPS_DIR="$PWD/WebKitBuild/PrecompiledHeaders" \
@@ -439,9 +440,9 @@ jobs:
           # effect. Also drops -Winvalid-offsetof (same class).
           set -o pipefail
           if [ "${{ matrix.san }}" = "debug" ]; then
-            Tools/Scripts/build-webkit --debug -parallelizeTargets=NO GCC_TREAT_WARNINGS_AS_ERRORS=NO OTHER_CPLUSPLUSFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw -Wno-offsetof' OTHER_CFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw'
+            Tools/Scripts/build-webkit --debug -parallelizeTargets=NO GCC_TREAT_WARNINGS_AS_ERRORS=NO OTHER_CPLUSPLUSFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw -Wno-offsetof' OTHER_CFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw' OTHER_TAPIFLAGS='-Wno-missing-template-arg-list-after-template-kw -Wno-offsetof'
           else
-            Tools/Scripts/build-webkit --release -parallelizeTargets=NO GCC_TREAT_WARNINGS_AS_ERRORS=NO OTHER_CPLUSPLUSFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw -Wno-offsetof' OTHER_CFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw'
+            Tools/Scripts/build-webkit --release -parallelizeTargets=NO GCC_TREAT_WARNINGS_AS_ERRORS=NO OTHER_CPLUSPLUSFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw -Wno-offsetof' OTHER_CFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw' OTHER_TAPIFLAGS='-Wno-missing-template-arg-list-after-template-kw -Wno-offsetof'
           fi
 
       - name: Copy iframe-variant test into the tree
