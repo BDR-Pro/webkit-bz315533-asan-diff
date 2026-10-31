@@ -160,28 +160,20 @@ jobs:
           # are NOT build-webkit CLI flags and get passed through to
           # xcodebuild (which rejects them). The marker steps above are
           # what routes the sanitizer. --debug/--release select config only.
+          # 2023-era build graphs expect pre-Xcode-26 SERIAL target
+          # ordering; Xcode 26.6 parallel scheduling races three observed
+          # generator/copy dependencies (JSC unified sources vs WTF headers;
+          # WebInspectorUI resources vs InspectorBackendCommands.js; more
+          # may exist). Global fix: -parallelizeTargets NO on the FULL
+          # scheme (build-webkit passes extra args through to xcodebuild),
+          # restoring serial ordering everywhere. Slower but correct for
+          # old trees; harmless (slightly slower) for trunk.
+          # Pre-builds are kept but now LOUD: pipefail + full exit codes.
+          set -o pipefail
           if [ "${{ matrix.san }}" = "debug" ]; then
-            Tools/Scripts/build-webkit --debug
+            Tools/Scripts/build-webkit --debug -parallelizeTargets NO
           else
-            # asan/tsan/interpose: Release + marker-file sanitizer routing.
-            # interpose writes no marker -> plain Release (ASan quarantine
-            # would block the same-slot reclaim the leg demonstrates).
-            # PHASE 0 (old revisions): 2023-era build graphs expect the
-            # pre-Xcode-26 serial target ordering. Two races observed under
-            # Xcode 26.6 parallel scheduling: (1) JSC Generate-Unified-
-            # Sources before WTF header copy; (2) WebInspectorUI resource
-            # copy before InspectorBackendCommands.js generation. Fix:
-            # pre-build the generator-heavy leaf projects serially, then
-            # the full scheme (incremental for trunk trees).
-            xcodebuild -project Source/WTF/WTF.xcodeproj -target WTF \
-              -configuration Release SYMROOT="$PWD/WebKitBuild" OBJROOT="$PWD/WebKitBuild" \
-              ARCHS=arm64 ONLY_ACTIVE_ARCH=YES 2>&1 | tail -2 \
-              || echo "WTF pre-build failed (continuing)"
-            xcodebuild -project Source/JavaScriptCore/JavaScriptCore.xcodeproj -target JavaScriptCore \
-              -configuration Release SYMROOT="$PWD/WebKitBuild" OBJROOT="$PWD/WebKitBuild" \
-              ARCHS=arm64 ONLY_ACTIVE_ARCH=YES 2>&1 | tail -2 \
-              || echo "JSC pre-build failed (continuing)"
-            Tools/Scripts/build-webkit --release
+            Tools/Scripts/build-webkit --release -parallelizeTargets NO
           fi
 
       - name: Copy iframe-variant test into the tree
