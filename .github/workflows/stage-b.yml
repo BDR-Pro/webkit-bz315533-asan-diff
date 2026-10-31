@@ -390,8 +390,8 @@ jobs:
             -configuration "$CFG" \
             $SAN \
             GCC_TREAT_WARNINGS_AS_ERRORS=NO \
-            OTHER_CPLUSPLUSFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw -Wno-offsetof' \
-            OTHER_CFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw' \
+            OTHER_CPLUSPLUSFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw -Wno-offsetof -Wno-c++11-narrowing-const-reference -Wno-deprecated-builtins -Wno-deprecated-literal-operator -Wno-extra-qualification -Wno-unnecessary-virtual-specifier -Wno-thread-safety-reference-return' \
+            OTHER_CFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw -Wno-c++11-narrowing-const-reference -Wno-deprecated-builtins -Wno-deprecated-literal-operator -Wno-extra-qualification -Wno-unnecessary-virtual-specifier -Wno-thread-safety-reference-return' \
             SYMROOT="$PWD/WebKitBuild" \
             OBJROOT="$PWD/WebKitBuild" \
             SHARED_PRECOMPS_DIR="$PWD/WebKitBuild/PrecompiledHeaders" \
@@ -411,9 +411,9 @@ jobs:
             -configuration "$CFG" \
             $SAN \
             GCC_TREAT_WARNINGS_AS_ERRORS=NO \
-            OTHER_CPLUSPLUSFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw -Wno-offsetof' \
-            OTHER_CFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw' \
-            OTHER_TAPIFLAGS='-Wno-missing-template-arg-list-after-template-kw -Wno-offsetof' \
+            OTHER_CPLUSPLUSFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw -Wno-offsetof -Wno-c++11-narrowing-const-reference -Wno-deprecated-builtins -Wno-deprecated-literal-operator -Wno-extra-qualification -Wno-unnecessary-virtual-specifier -Wno-thread-safety-reference-return' \
+            OTHER_CFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw -Wno-c++11-narrowing-const-reference -Wno-deprecated-builtins -Wno-deprecated-literal-operator -Wno-extra-qualification -Wno-unnecessary-virtual-specifier -Wno-thread-safety-reference-return' \
+            OTHER_TAPIFLAGS='-Wno-missing-template-arg-list-after-template-kw -Wno-offsetof -Wno-c++11-narrowing-const-reference -Wno-deprecated-builtins -Wno-deprecated-literal-operator' \
             SYMROOT="$PWD/WebKitBuild" \
             OBJROOT="$PWD/WebKitBuild" \
             SHARED_PRECOMPS_DIR="$PWD/WebKitBuild/PrecompiledHeaders" \
@@ -472,9 +472,9 @@ jobs:
           # effect. Also drops -Winvalid-offsetof (same class).
           set -o pipefail
           if [ "${{ matrix.san }}" = "debug" ]; then
-            Tools/Scripts/build-webkit --debug -parallelizeTargets=NO GCC_TREAT_WARNINGS_AS_ERRORS=NO OTHER_CPLUSPLUSFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw -Wno-offsetof' OTHER_CFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw' OTHER_TAPIFLAGS='-Wno-missing-template-arg-list-after-template-kw -Wno-offsetof'
+            Tools/Scripts/build-webkit --debug -parallelizeTargets=NO GCC_TREAT_WARNINGS_AS_ERRORS=NO OTHER_CPLUSPLUSFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw -Wno-offsetof -Wno-c++11-narrowing-const-reference -Wno-deprecated-builtins -Wno-deprecated-literal-operator -Wno-extra-qualification -Wno-unnecessary-virtual-specifier -Wno-thread-safety-reference-return' OTHER_CFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw -Wno-c++11-narrowing-const-reference -Wno-deprecated-builtins -Wno-deprecated-literal-operator -Wno-extra-qualification -Wno-unnecessary-virtual-specifier -Wno-thread-safety-reference-return' OTHER_TAPIFLAGS='-Wno-missing-template-arg-list-after-template-kw -Wno-offsetof -Wno-c++11-narrowing-const-reference -Wno-deprecated-builtins -Wno-deprecated-literal-operator'
           else
-            Tools/Scripts/build-webkit --release -parallelizeTargets=NO GCC_TREAT_WARNINGS_AS_ERRORS=NO OTHER_CPLUSPLUSFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw -Wno-offsetof' OTHER_CFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw' OTHER_TAPIFLAGS='-Wno-missing-template-arg-list-after-template-kw -Wno-offsetof'
+            Tools/Scripts/build-webkit --release -parallelizeTargets=NO GCC_TREAT_WARNINGS_AS_ERRORS=NO OTHER_CPLUSPLUSFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw -Wno-offsetof -Wno-c++11-narrowing-const-reference -Wno-deprecated-builtins -Wno-deprecated-literal-operator -Wno-extra-qualification -Wno-unnecessary-virtual-specifier -Wno-thread-safety-reference-return' OTHER_CFLAGS='$(inherited) -Wno-missing-template-arg-list-after-template-kw -Wno-c++11-narrowing-const-reference -Wno-deprecated-builtins -Wno-deprecated-literal-operator -Wno-extra-qualification -Wno-unnecessary-virtual-specifier -Wno-thread-safety-reference-return' OTHER_TAPIFLAGS='-Wno-missing-template-arg-list-after-template-kw -Wno-offsetof -Wno-c++11-narrowing-const-reference -Wno-deprecated-builtins -Wno-deprecated-literal-operator'
           fi
 
       - name: Copy iframe-variant test into the tree
