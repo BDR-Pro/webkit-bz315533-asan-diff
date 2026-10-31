@@ -89,14 +89,18 @@ jobs:
           # a truncated form for SHA-want (attempts 7, 11, 12 prefix legs:
           # "couldn't find remote ref" on every retry; the 41-char forms
           # fetch reliably - verified locally 10/10 for all campaign SHAs).
-          # Resolve via the REST API (which returns the full object id) and
-          # fetch that; keep a 5-attempt retry loop for residual flakiness.
+          # Resolve the full 41-char object id via the public REST API using
+          # curl (gh CLI is not authenticated in this job's runner context -
+          # attempt-13 died with exit code 4 on the gh api call; curl + the
+          # GITHUB_TOKEN works for public repos).
           ok=0
           for attempt in 1 2 3 4 5; do
-            FULL_SHA=$(gh api "repos/WebKit/WebKit/commits/${{ matrix.webkit_ref }}" --jq '.sha' 2>/dev/null)
-            if [ -n "$FULL_SHA" ]; then
-              if git -c protocol.version=2 fetch --depth 1 origin "$FULL_SHA"; then ok=1; break; fi
-            fi
+            API_SHA=$(curl -sf -H "Authorization: token $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/WebKit/WebKit/commits/${{ matrix.webkit_ref }}" \
+              | python3 -c "import json,sys; print(json.load(sys.stdin)['sha'])" 2>/dev/null)
+            echo "attempt $attempt: API resolved SHA = ${API_SHA:-<none>}"
+            if [ -n "$API_SHA" ] && git -c protocol.version=2 fetch --depth 1 origin "$API_SHA"; then ok=1; break; fi
             if git -c protocol.version=2 fetch --depth 1 origin "${{ matrix.webkit_ref }}"; then ok=1; break; fi
             echo "fetch attempt $attempt failed; retrying in 10s"
             sleep 10
