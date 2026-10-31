@@ -306,6 +306,7 @@ jobs:
             -workspace "$PWD/WebKit.xcworkspace" \
             -configuration "$CFG" \
             $SAN \
+            GCC_TREAT_WARNINGS_AS_ERRORS=NO \
             SYMROOT="$PWD/WebKitBuild" \
             OBJROOT="$PWD/WebKitBuild" \
             SHARED_PRECOMPS_DIR="$PWD/WebKitBuild/PrecompiledHeaders" \
@@ -324,6 +325,7 @@ jobs:
             -workspace "$PWD/WebKit.xcworkspace" \
             -configuration "$CFG" \
             $SAN \
+            GCC_TREAT_WARNINGS_AS_ERRORS=NO \
             SYMROOT="$PWD/WebKitBuild" \
             OBJROOT="$PWD/WebKitBuild" \
             SHARED_PRECOMPS_DIR="$PWD/WebKitBuild/PrecompiledHeaders" \
@@ -349,6 +351,13 @@ jobs:
       - name: Build WebKit (${{ matrix.san }}, Mac)
         run: |
           cd "$RUNNER_TEMP/webkit"
+          # ATTEMPT-10: 2023-era sources under clang 26 trip NEW warning
+          # classes (-Wdeprecated-literal-operator in WTFString.h,
+          # -Winvalid-offsetof in Vector.h) that didn't exist under the
+          # 2023 toolchain; Base.xcconfig sets
+          # GCC_TREAT_WARNINGS_AS_ERRORS=YES so they are fatal. Overridden
+          # to NO IDENTICALLY on prefix and fixed legs - a warnings-level
+          # change with zero codegen effect.
           # NOTE: at these revisions webkitdirs reads ONLY the
           # WebKitBuild/ASan and WebKitBuild/TSan marker files
           # (determineASanIsEnabled/determineTSanIsEnabled); --asan/--tsan
@@ -366,9 +375,9 @@ jobs:
           # Pre-builds are kept but now LOUD: pipefail + full exit codes.
           set -o pipefail
           if [ "${{ matrix.san }}" = "debug" ]; then
-            Tools/Scripts/build-webkit --debug -parallelizeTargets=NO
+            Tools/Scripts/build-webkit --debug -parallelizeTargets=NO GCC_TREAT_WARNINGS_AS_ERRORS=NO
           else
-            Tools/Scripts/build-webkit --release -parallelizeTargets=NO
+            Tools/Scripts/build-webkit --release -parallelizeTargets=NO GCC_TREAT_WARNINGS_AS_ERRORS=NO
           fi
 
       - name: Copy iframe-variant test into the tree
