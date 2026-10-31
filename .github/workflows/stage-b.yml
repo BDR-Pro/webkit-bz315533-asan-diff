@@ -83,7 +83,16 @@ jobs:
           git init "$RUNNER_TEMP/webkit"
           cd "$RUNNER_TEMP/webkit"
           git remote add origin https://github.com/WebKit/WebKit.git
-          git -c protocol.version=2 fetch --depth 1 origin "${{ matrix.webkit_ref }}"
+          # GitHub's allowReachableSHA1InWant shallow-fetch of old SHAs is
+          # load-balancer-flaky (attempts 7 & 11 prefix legs died on
+          # "couldn't find remote ref"). Retry with backoff.
+          ok=0
+          for attempt in 1 2 3 4 5; do
+            if git -c protocol.version=2 fetch --depth 1 origin "${{ matrix.webkit_ref }}"; then ok=1; break; fi
+            echo "fetch attempt $attempt failed; retrying in 10s"
+            sleep 10
+          done
+          if [ "$ok" != "1" ]; then echo "FATAL: fetch never succeeded"; exit 1; fi
           git checkout FETCH_HEAD
           echo "HEAD: $(git rev-parse HEAD)"
 
@@ -221,6 +230,24 @@ jobs:
               print("patched generate-tapi-filelist.py: FileNotFoundError -> empty-header fallback")
           else:
               print("generate-tapi-filelist.py pattern not found (trunk?) - no patch applied")
+          # ATTEMPT-11: URLCocoa.o compile died with a "previous definition"
+          # note at SDK IOSurfaceRef.h:452 - the 2023-era WTF SPI shim
+          # re-declares IOSurfaceMemoryLedgerTags, an enum the modern SDK
+          # now ships publicly. Drop the shim's duplicate enum block; the
+          # SDK header provides the same kIOSurfaceMemoryLedgerTag*
+          # constants. Harness-only dedup, identical on both legs, no-op
+          # on trunk.
+          p3 = "Source/WTF/wtf/spi/cocoa/IOSurfaceSPI.h"
+          s3 = open(p3).read()
+          marker3 = "typedef CF_ENUM(int, IOSurfaceMemoryLedgerTags)"
+          i = s3.find(marker3)
+          if i != -1:
+              j = s3.find("};", i)
+              j = s3.find("\n", j) + 1
+              open(p3, "w").write(s3[:i] + "/* HARNESS: duplicate of SDK enum removed for Xcode 26.6 build */\n" + s3[j:])
+              print("patched IOSurfaceSPI.h: removed duplicate IOSurfaceMemoryLedgerTags enum (SDK 26.5 provides it)")
+          else:
+              print("no IOSurfaceMemoryLedgerTags shim in IOSurfaceSPI.h (trunk?) - no patch applied")
           PYEOF
           mkdir -p WebKit.xcworkspace/xcshareddata/xcschemes
           # Attempt-7 lesson: scheme BuildActionEntry LISTED ORDER is not a
@@ -313,7 +340,7 @@ jobs:
             ARCHS=arm64 SDKROOT=macosx \
             -parallelizeTargets=NO build > /tmp/wtf-prebuild.log 2>&1 || {
               echo "WTF pre-build FAILED; tail follows:"
-              tail -60 /tmp/wtf-prebuild.log
+              tail -150 /tmp/wtf-prebuild.log
               exit 1
             }
           echo "--- WTF pre-build OK; wtf/Scripts populated:"
@@ -332,7 +359,7 @@ jobs:
             ARCHS=arm64 SDKROOT=macosx \
             -parallelizeTargets=NO build > /tmp/jscore-prebuild.log 2>&1 || {
               echo "JSC workspace pre-build FAILED; tail follows:"
-              tail -60 /tmp/jscore-prebuild.log
+              tail -150 /tmp/jscore-prebuild.log
             }
           echo "--- PrivateHeaders after pre-build:"
           ls -la WebKitBuild/$CFG/JavaScriptCore.framework/Versions/A/PrivateHeaders/ 2>/dev/null || echo "(framework PrivateHeaders not present - relying on fallback patch)"
