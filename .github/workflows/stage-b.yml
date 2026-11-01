@@ -370,6 +370,18 @@ jobs:
               print("patched CGDisplayStreamScreenCaptureSource.mm: file guard disabled (obsoleted CGDisplayStream APIs)")
           else:
               print("CGDisplayStreamScreenCaptureSource.mm guard not found (trunk?) - no patch applied")
+          # ATTEMPT-26: the sibling file CGDisplayStreamCaptureSource.cpp
+          # (same guard, same obsoleted-API class) must be disabled too.
+          p3e = "Source/WebCore/platform/mediastream/mac/CGDisplayStreamCaptureSource.cpp"
+          s3e = open(p3e).read()
+          old3e = "#if ENABLE(MEDIA_STREAM) && PLATFORM(MAC)"
+          new3e = "#if 0 // HARNESS: CGDisplayStream APIs obsoleted in SDK 26.5 (macOS 15+); ScreenCaptureKit is the replacement and layout tests do not exercise screen capture"
+          if old3e in s3e:
+              s3e = s3e.replace(old3e, new3e, 1)
+              open(p3e, "w").write(s3e)
+              print("patched CGDisplayStreamCaptureSource.cpp: file guard disabled (obsoleted CGDisplayStream APIs)")
+          else:
+              print("CGDisplayStreamCaptureSource.cpp guard not found (trunk?) - no patch applied")
           p3 = "Source/WTF/wtf/spi/cocoa/IOSurfaceSPI.h"
           s3 = open(p3).read()
           marker3 = "typedef CF_ENUM(int, IOSurfaceMemoryLedgerTags)"
