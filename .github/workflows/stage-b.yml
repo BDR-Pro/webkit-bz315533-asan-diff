@@ -324,6 +324,32 @@ jobs:
           else:
               print("AVExternalContentProtectionStatus typedef not found (trunk?)")
           open(p3b, "w").write(s3b)
+          # ATTEMPT-24: OutputDevice.o died on 'AVAudioSession' is
+          # unavailable: not available on macOS. The 2023-era
+          # AVFoundationSoftLink.h soft-links AVAudioSession under
+          # HAVE(AVAUDIOSESSION), which the macOS feature-flags still
+          # enable, but SDK 26.5 marks AVAudioSession unavailable on
+          # macOS entirely. HAVE(AVAUDIOSESSION) must be 0 for this
+          # SDK: strip the two HAVE(AVAUDIOSESSION) and
+          # HAVE(AVAUDIOSESSION_SMARTROUTING) entries from the
+          # macOS HAVE_ feature list in wtf/PlatformHave.h (guarded by
+          # PLATFORM(IOS_FAMILY) upstream; the 2023 tree enables it
+          # for macOS too).
+          p3c = "Source/WTF/wtf/PlatformHave.h"
+          s3c = open(p3c).read()
+          fixed_c = 0
+          for guard in [
+              '#define HAVE_AVAUDIOSESSION 1',
+              '#define HAVE_AVAUDIOSESSION_SMARTROUTING 1',
+          ]:
+              if guard in s3c:
+                  s3c = s3c.replace(guard, '/* HARNESS: removed for Xcode 26.6 build - AVAudioSession unavailable on macOS SDK 26.5 */')
+                  fixed_c += 1
+          if fixed_c:
+              open(p3c, "w").write(s3c)
+              print(f"patched PlatformHave.h: neutralized {fixed_c} AVAudioSession HAVE_ define(s)")
+          else:
+              print("no AVAudioSession HAVE_ defines found in PlatformHave.h (trunk?)")
           p3 = "Source/WTF/wtf/spi/cocoa/IOSurfaceSPI.h"
           s3 = open(p3).read()
           marker3 = "typedef CF_ENUM(int, IOSurfaceMemoryLedgerTags)"
