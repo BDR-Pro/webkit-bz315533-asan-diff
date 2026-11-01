@@ -222,6 +222,22 @@ if old in s:
     print("patched WebCore.xcconfig: OTHER_LDFLAGS force_loads libavif.a (dav1d symbols)")
 else:
     print("WebCore.xcconfig OTHER_LDFLAGS tail not found (trunk?)")
+# ATTEMPT-36: WebKitLegacy's WebFullScreenController.mm uses
+# CGWindowListCreateImage (obsoleted in macOS 15.0 - hard error, no
+# pragma escape). Upstream replaced this with ScreenCaptureKit. The
+# function captures a snapshot for the legacy full-screen animation;
+# return nil image is a benign degradation. Patch: guard the call and
+# skip the snapshot.
+p = "Source/WebKitLegacy/mac/WebView/WebFullScreenController.mm"
+s = open(p).read()
+old = "ALLOW_DEPRECATED_DECLARATIONS_BEGIN\n    RetainPtr<CGImageRef> webViewContents = adoptCF(CGWindowListCreateImage(NSRectToCGRect(webViewFrame), kCGWindowListOptionIncludingWindow, windowID, kCGWindowImageShouldBeOpaque));\nALLOW_DEPRECATED_DECLARATIONS_END"
+new = "#if 0 // HARNESS: CGWindowListCreateImage obsoleted in SDK 26.5; skip full-screen snapshot\nALLOW_DEPRECATED_DECLARATIONS_BEGIN\n    RetainPtr<CGImageRef> webViewContents = adoptCF(CGWindowListCreateImage(NSRectToCGRect(webViewFrame), kCGWindowListOptionIncludingWindow, windowID, kCGWindowImageShouldBeOpaque));\nALLOW_DEPRECATED_DECLARATIONS_END\n#else\n    RetainPtr<CGImageRef> webViewContents;\n#endif"
+if old in s:
+    open(p, "w").write(s.replace(old, new, 1))
+    print("patched WebFullScreenController.mm: CGWindowListCreateImage snapshot skipped (obsoleted API)")
+else:
+    print("WebFullScreenController.mm CGWindowListCreateImage not found (trunk?)")
+
 
 # ATTEMPT-32: third consumer - LocalSampleBufferDisplayLayer.mm
 # line 436: RELEASE_LOG reads all five properties inside a
