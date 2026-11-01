@@ -183,6 +183,30 @@ if old3h in s3h:
     print("patched MediaPlayerPrivateAVFoundationObjC.mm: videoPlaybackQualityMetrics returns nullopt (unavailable SDK properties)")
 else:
     print("MediaPlayerPrivateAVFoundationObjC.mm metrics block not found (trunk?) - no patch applied")
+# ATTEMPT-33: the two disabled CGDisplayStream files leave undefined
+# references in DisplayCaptureManagerCocoa.cpp (screenCaptureDeviceWithPersistentID)
+# and DisplayCaptureSourceCocoa.cpp (create) at link time. Stub both call
+# sites: ScreenCaptureKit path remains (HAVE(SCREEN_CAPTURE_KIT is 1),
+# the SCK fallback is the runtime path anyway); the CGDisplayStream tail
+# call becomes std::nullopt.
+p = "Source/WebCore/platform/mediastream/mac/DisplayCaptureManagerCocoa.cpp"
+s = open(p).read()
+old = "    return CGDisplayStreamScreenCaptureSource::screenCaptureDeviceWithPersistentID(deviceID);"
+new = "    return std::nullopt; // HARNESS: CGDisplayStream disabled (obsoleted APIs)"
+if old in s:
+    open(p, "w").write(s.replace(old, new, 1))
+    print("patched DisplayCaptureManagerCocoa.cpp: CGDisplayStream tail call returns nullopt")
+else:
+    print("DisplayCaptureManagerCocoa.cpp CGDisplayStream call not found (trunk?)")
+p = "Source/WebCore/platform/mediastream/cocoa/DisplayCaptureSourceCocoa.cpp"
+s = open(p).read()
+old = "        return create(CGDisplayStreamScreenCaptureSource::create(device.persistentId()), device, WTFMove(hashSalts), constraints, pageIdentifier);"
+new = '        return CaptureSourceOrError { CaptureSourceError { "Screen capture is unavailable"_s } }; // HARNESS: CGDisplayStream disabled (obsoleted APIs); ScreenCaptureKit is the available path' 
+if old in s:
+    open(p, "w").write(s.replace(old, new, 1))
+    print("patched DisplayCaptureSourceCocoa.cpp: CGDisplayStream create call stubbed")
+else:
+    print("DisplayCaptureSourceCocoa.cpp CGDisplayStream call not found (trunk?)")
 # ATTEMPT-32: third consumer - LocalSampleBufferDisplayLayer.mm
 # line 436: RELEASE_LOG reads all five properties inside a
 # #if !RELEASE_LOG_DISABLED block. Release builds have
