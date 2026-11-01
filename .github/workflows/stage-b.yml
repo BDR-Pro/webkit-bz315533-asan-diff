@@ -396,6 +396,26 @@ jobs:
           # direction: cast to the promoted integer type the format
           # expects. Identical on both legs; log-only, zero behavior
           # change.
+          # ATTEMPT-29: MediaPlayerPrivateMediaSourceAVFObjC.mm reads
+          # AVVideoPerformanceMetrics properties that SDK 26.5 declares
+          # unavailable on macOS (they were the SPI shim's declarations
+          # we removed in attempt-23; the SDK's own public interface
+          # marks them unavailable for macOS targets). The call is
+          # guarded by respondsToSelector at runtime but the property
+          # access is still a hard compile error. VideoPlaybackQuality
+          # metadata is not exercised by layout tests: make the
+          # videoPlaybackQualityMetrics() fast path return early,
+          # before the unavailable-property reads.
+          p3g = "Source/WebCore/platform/graphics/avfoundation/objc/MediaPlayerPrivateMediaSourceAVFObjC.mm"
+          s3g = open(p3g).read()
+          old3g = "    auto metrics = [m_sampleBufferDisplayLayer videoPerformanceMetrics];\n    if (!metrics)\n        return std::nullopt;"
+          new3g = "#if 0 // HARNESS: AVVideoPerformanceMetrics properties unavailable on macOS SDK 26.5; layout tests do not read playback-quality metadata\n    auto metrics = [m_sampleBufferDisplayLayer videoPerformanceMetrics];\n    if (!metrics)\n        return std::nullopt;\n#else\n    return std::nullopt;\n#endif"
+          if old3g in s3g:
+              s3g = s3g.replace(old3g, new3g, 1)
+              open(p3g, "w").write(s3g)
+              print("patched MediaPlayerPrivateMediaSourceAVFObjC.mm: videoPlaybackQualityMetrics fast path returns nullopt (unavailable SDK properties)")
+          else:
+              print("videoPerformanceMetrics block not found (trunk?) - no patch applied")
           p3f = "Source/WebCore/loader/FrameLoader.cpp"
           s3f = open(p3f).read()
           old3f = '"handleLoadFailureRecovery: errorRecoveryMethod: %hhu, isHTTPSFirstApplicable: %d, isHTTPFallbackInProgress: %d", error.errorRecoveryMethod(), isHTTPSFirstApplicable, isHTTPFallbackInProgress())'
