@@ -422,6 +422,20 @@ jobs:
               print("patched MediaPlayerPrivateMediaSourceAVFObjC.mm: videoPlaybackQualityMetrics fast path returns nullopt (unavailable SDK properties)")
           else:
               print("videoPerformanceMetrics block not found (trunk?) - no patch applied")
+          # ATTEMPT-31: the SAME unavailable-property pattern exists in the
+          # sibling MediaPlayerPrivateAVFoundationObjC.mm (lines ~3849-3876).
+          # Replace its whole videoPlaybackQualityMetrics() body with an
+          # early return, same rationale as attempt-29/30.
+          p3h = "Source/WebCore/platform/graphics/avfoundation/objc/MediaPlayerPrivateAVFoundationObjC.mm"
+          s3h = open(p3h).read()
+          old3h = "    if (![m_videoLayer respondsToSelector:@selector(videoPerformanceMetrics)])\n        return std::nullopt;\n\n#if PLATFORM(WATCHOS)\n    return std::nullopt;\n#else\nALLOW_NEW_API_WITHOUT_GUARDS_BEGIN\n\n    auto metrics = [m_videoLayer videoPerformanceMetrics];\n    if (!metrics)\n        return std::nullopt;\n\n    uint32_t displayCompositedFrames = 0;\n    if ([metrics respondsToSelector:@selector(numberOfDisplayCompositedVideoFrames)])\n        displayCompositedFrames = [metrics numberOfDisplayCompositedVideoFrames];\n\n    return VideoPlaybackQualityMetrics {\n        static_cast<uint32_t>([metrics totalNumberOfVideoFrames]),\n        static_cast<uint32_t>([metrics numberOfDroppedVideoFrames]),\n        static_cast<uint32_t>([metrics numberOfCorruptedVideoFrames]),\n        [metrics totalFrameDelay],\n        displayCompositedFrames,\n    };\n\nALLOW_NEW_API_WITHOUT_GUARDS_END\n#endif"
+          new3h = "    // HARNESS: AVVideoPerformanceMetrics properties unavailable on macOS SDK 26.5; layout tests do not read playback-quality metadata\n    return std::nullopt;"
+          if old3h in s3h:
+              s3h = s3h.replace(old3h, new3h, 1)
+              open(p3h, "w").write(s3h)
+              print("patched MediaPlayerPrivateAVFoundationObjC.mm: videoPlaybackQualityMetrics returns nullopt (unavailable SDK properties)")
+          else:
+              print("MediaPlayerPrivateAVFoundationObjC.mm metrics block not found (trunk?) - no patch applied")
           p3f = "Source/WebCore/loader/FrameLoader.cpp"
           s3f = open(p3f).read()
           old3f = '"handleLoadFailureRecovery: errorRecoveryMethod: %hhu, isHTTPSFirstApplicable: %d, isHTTPFallbackInProgress: %d", error.errorRecoveryMethod(), isHTTPSFirstApplicable, isHTTPFallbackInProgress())'
