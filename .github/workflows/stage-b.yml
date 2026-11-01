@@ -436,6 +436,25 @@ jobs:
               print("patched MediaPlayerPrivateAVFoundationObjC.mm: videoPlaybackQualityMetrics returns nullopt (unavailable SDK properties)")
           else:
               print("MediaPlayerPrivateAVFoundationObjC.mm metrics block not found (trunk?) - no patch applied")
+          # ATTEMPT-32: third consumer - LocalSampleBufferDisplayLayer.mm
+          # line 436: RELEASE_LOG reads all five properties inside a
+          # #if !RELEASE_LOG_DISABLED block. Release builds have
+          # RELEASE_LOG_DISABLED set... but the block still compiles for
+          # RELEASE_LOG_ENABLED channels in WebCore Release config. Patch:
+          # guard the metrics read with (0 &&) so the property accesses
+          # are not compiled.
+          p3i = "Source/WebCore/platform/graphics/avfoundation/objc/LocalSampleBufferDisplayLayer.mm"
+          s3i = open(p3i).read()
+          # Wrap the whole if-statement in #if 0 (self-contained, no
+          # brace surgery; RELEASE_LOG property reads are excluded).
+          old3i = "        if (auto* metrics = [m_sampleBufferDisplayLayer videoPerformanceMetrics])\n            RELEASE_LOG(WebRTC, \"LocalSampleBufferDisplayLayer (%{public}s) metrics, total=%lu, dropped=%lu, corrupted=%lu, display-composited=%lu, non-display-composited=%lu (pending=%lu)\", m_logIdentifier.utf8().data(), metrics.totalNumberOfVideoFrames, metrics.numberOfDroppedVideoFrames, metrics.numberOfCorruptedVideoFrames, metrics.numberOfDisplayCompositedVideoFrames, metrics.numberOfNonDisplayCompositedVideoFrames, m_pendingVideoFrameQueue.size());"
+          new3i = "#if 0 // HARNESS: AVVideoPerformanceMetrics properties unavailable on macOS SDK 26.5; metrics logging excluded\n" + old3i + "\n#endif"
+          if old3i in s3i:
+              s3i = s3i.replace(old3i, new3i, 1)
+              open(p3i, "w").write(s3i)
+              print("patched LocalSampleBufferDisplayLayer.mm: metrics RELEASE_LOG block wrapped in #if 0 (unavailable SDK properties)")
+          else:
+              print("LocalSampleBufferDisplayLayer.mm metrics block not found (trunk?) - no patch applied")
           p3f = "Source/WebCore/loader/FrameLoader.cpp"
           s3f = open(p3f).read()
           old3f = '"handleLoadFailureRecovery: errorRecoveryMethod: %hhu, isHTTPSFirstApplicable: %d, isHTTPFallbackInProgress: %d", error.errorRecoveryMethod(), isHTTPSFirstApplicable, isHTTPFallbackInProgress())'
