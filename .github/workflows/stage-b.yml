@@ -382,6 +382,25 @@ jobs:
               print("patched CGDisplayStreamCaptureSource.cpp: file guard disabled (obsoleted CGDisplayStream APIs)")
           else:
               print("CGDisplayStreamCaptureSource.cpp guard not found (trunk?) - no patch applied")
+          # ATTEMPT-27: FrameLoader.cpp:2580 logs a bool-backed enum
+          # (ErrorRecoveryMethod : bool) with %hhu - a genuine 2023-era
+          # format-string bug that newer clang diagnoses as a hard
+          # -Werror,-Wformat error (enum class with fixed underlying
+          # type is not promoted like unsigned char). Upstream later
+          # removed the log call entirely. Harness fix mirrors upstream's
+          # direction: cast to the promoted integer type the format
+          # expects. Identical on both legs; log-only, zero behavior
+          # change.
+          p3f = "Source/WebCore/loader/FrameLoader.cpp"
+          s3f = open(p3f).read()
+          old3f = '"handleLoadFailureRecovery: errorRecoveryMethod: %hhu, isHTTPSFirstApplicable: %d, isHTTPFallbackInProgress: %d", error.errorRecoveryMethod(), isHTTPSFirstApplicable, isHTTPFallbackInProgress())'
+          new3f = '"handleLoadFailureRecovery: errorRecoveryMethod: %hhu, isHTTPSFirstApplicable: %d, isHTTPFallbackInProgress: %d", static_cast<unsigned char>(error.errorRecoveryMethod()), isHTTPSFirstApplicable, isHTTPFallbackInProgress())'
+          if old3f in s3f:
+              s3f = s3f.replace(old3f, new3f, 1)
+              open(p3f, "w").write(s3f)
+              print("patched FrameLoader.cpp: errorRecoveryMethod log argument cast to unsigned char (format-string fix)")
+          else:
+              print("FrameLoader.cpp errorRecoveryMethod log not found (trunk?) - no patch applied")
           p3 = "Source/WTF/wtf/spi/cocoa/IOSurfaceSPI.h"
           s3 = open(p3).read()
           marker3 = "typedef CF_ENUM(int, IOSurfaceMemoryLedgerTags)"
