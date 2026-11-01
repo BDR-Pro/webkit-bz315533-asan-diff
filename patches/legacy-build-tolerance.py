@@ -201,7 +201,7 @@ else:
 p = "Source/WebCore/platform/mediastream/cocoa/DisplayCaptureSourceCocoa.cpp"
 s = open(p).read()
 old = "        return create(CGDisplayStreamScreenCaptureSource::create(device.persistentId()), device, WTFMove(hashSalts), constraints, pageIdentifier);"
-new = '        return CaptureSourceOrError { CaptureSourceError { "Screen capture is unavailable"_s } }; // HARNESS: CGDisplayStream disabled (obsoleted APIs); ScreenCaptureKit is the available path' 
+new = '        return CaptureSourceOrError({ "Screen capture is unavailable"_s, MediaAccessDenialReason::PermissionDenied }); // HARNESS: CGDisplayStream disabled (obsoleted APIs); ScreenCaptureKit is the available path' 
 if old in s:
     open(p, "w").write(s.replace(old, new, 1))
     print("patched DisplayCaptureSourceCocoa.cpp: CGDisplayStream create call stubbed")
