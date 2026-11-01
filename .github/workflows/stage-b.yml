@@ -350,6 +350,26 @@ jobs:
               print(f"patched PlatformHave.h: neutralized {fixed_c} AVAudioSession HAVE_ define(s)")
           else:
               print("no AVAudioSession HAVE_ defines found in PlatformHave.h (trunk?)")
+          # ATTEMPT-25: WebCore's CGDisplayStreamScreenCaptureSource.mm
+          # uses CGDisplayStream APIs that SDK 26.5 marks OBSOLETED
+          # (obsoleted in macOS 15.0) - a hard error that no pragma or
+          # -Wno flag can suppress (obsoleted != deprecated). Upstream's
+          # own solution was deleting the file in favor of
+          # ScreenCaptureKit. Harness fix: flip the file guard to #if 0;
+          # screen capture is not exercised by layout tests. Identical on
+          # both legs.
+          p3d = "Source/WebCore/platform/mediastream/mac/CGDisplayStreamScreenCaptureSource.mm"
+          s3d = open(p3d).read()
+          old3d = "#if ENABLE(MEDIA_STREAM) && PLATFORM(MAC)"
+          new3d = "#if 0 // HARNESS: CGDisplayStream APIs obsoleted in SDK 26.5 (macOS 15+); ScreenCaptureKit is the replacement and layout tests do not exercise screen capture"
+          if old3d in s3d:
+              # Only the FIRST occurrence (the file guard); the trailing
+              # #endif comment matches textually so no other change needed.
+              s3d = s3d.replace(old3d, new3d, 1)
+              open(p3d, "w").write(s3d)
+              print("patched CGDisplayStreamScreenCaptureSource.mm: file guard disabled (obsoleted CGDisplayStream APIs)")
+          else:
+              print("CGDisplayStreamScreenCaptureSource.mm guard not found (trunk?) - no patch applied")
           p3 = "Source/WTF/wtf/spi/cocoa/IOSurfaceSPI.h"
           s3 = open(p3).read()
           marker3 = "typedef CF_ENUM(int, IOSurfaceMemoryLedgerTags)"
