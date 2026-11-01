@@ -293,6 +293,37 @@ jobs:
           # SDK header provides the same kIOSurfaceMemoryLedgerTag*
           # constants. Harness-only dedup, identical on both legs, no-op
           # on trunk.
+          # ATTEMPT-23: PAL's OutputDevice.mm died because the 2023-era
+          # AVFoundationSPI.h shim re-declares interfaces/typedefs that SDK
+          # 26.5 now ships publicly (AVVideoPerformanceMetrics interface at
+          # line 387, AVExternalContentProtectionStatus typedef at line
+          # 250). Same class as the IOSurfaceSPI dedup: remove the shim's
+          # duplicate blocks; the SDK provides them.
+          p3b = "Source/WebCore/PAL/pal/spi/cocoa/AVFoundationSPI.h"
+          s3b = open(p3b).read()
+          # 1) duplicate AVVideoPerformanceMetrics interface block
+          m3a = s3b.find("#if !USE(APPLE_INTERNAL_SDK)\n@interface AVVideoPerformanceMetrics : NSObject")
+          if m3a == -1:
+              m3a = s3b.find("#if !USE(APPLE_INTERNAL_SDK)\n@interface AVVideoPerformanceMetrics")
+          if m3a != -1:
+              e3a = s3b.find("#endif", m3a)
+              # remove from the #if up to and including its #endif, keeping
+              # the @end inside; replace whole block with a comment.
+              block = s3b[m3a:e3a+7]
+              s3b = s3b.replace(block, "/* HARNESS: duplicate AVVideoPerformanceMetrics interface removed for Xcode 26.6 build */")
+              print("patched AVFoundationSPI.h: removed duplicate AVVideoPerformanceMetrics interface")
+          else:
+              print("AVVideoPerformanceMetrics shim block not found (trunk?)")
+          # 2) duplicate AVExternalContentProtectionStatus typedef
+          m3b = s3b.find("typedef NS_ENUM(NSInteger, AVExternalContentProtectionStatus)")
+          if m3b != -1:
+              e3b = s3b.find("};", m3b)
+              e3b = s3b.find("\n", e3b) + 1
+              s3b = s3b[:m3b] + "/* HARNESS: duplicate AVExternalContentProtectionStatus typedef removed for Xcode 26.6 build */\n" + s3b[e3b:]
+              print("patched AVFoundationSPI.h: removed duplicate AVExternalContentProtectionStatus typedef")
+          else:
+              print("AVExternalContentProtectionStatus typedef not found (trunk?)")
+          open(p3b, "w").write(s3b)
           p3 = "Source/WTF/wtf/spi/cocoa/IOSurfaceSPI.h"
           s3 = open(p3).read()
           marker3 = "typedef CF_ENUM(int, IOSurfaceMemoryLedgerTags)"
