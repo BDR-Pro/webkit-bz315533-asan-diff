@@ -341,6 +341,11 @@ jobs:
           for guard in [
               '#define HAVE_AVAUDIOSESSION 1',
               '#define HAVE_AVAUDIOSESSION_SMARTROUTING 1',
+              # ATTEMPT-28: kCLAuthorizationStatusAuthorizedWhenInUse is
+              # unavailable on macOS in SDK 26.5; the 2023 tree enables it
+              # whenever MIN_REQUIRED >= 140000. Geolocation is not
+              # exercised by layout tests.
+              '#define HAVE_CORE_LOCATION_AUTHORIZED_WHEN_IN_USE 1',
           ]:
               if guard in s3c:
                   s3c = s3c.replace(guard, '/* HARNESS: removed for Xcode 26.6 build - AVAudioSession unavailable on macOS SDK 26.5 */')
