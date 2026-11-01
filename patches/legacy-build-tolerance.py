@@ -237,6 +237,22 @@ if old in s:
     print("patched WebFullScreenController.mm: CGWindowListCreateImage snapshot skipped (obsoleted API)")
 else:
     print("WebFullScreenController.mm CGWindowListCreateImage not found (trunk?)")
+# ATTEMPT-37: the same obsoleted CGWindowListCreateImage appears as the
+# off-screen fallback in WebKit's WebViewImpl.mm
+# (windowSnapshotAtTime... hardware-capture fallback path). The primary
+# path uses private CGSHWCaptureWindowList; the fallback only triggers
+# for fully off-screen windows. Patch: return nullptr from the
+# fallback (no snapshot - benign, identical on both legs).
+p = "Source/WebKit/UIProcess/mac/WebViewImpl.mm"
+s = open(p).read()
+old = "ALLOW_DEPRECATED_DECLARATIONS_BEGIN\n    return adoptCF(CGWindowListCreateImage(CGRectNull, kCGWindowListOptionIncludingWindow, windowID, imageOptions));\nALLOW_DEPRECATED_DECLARATIONS_END"
+new = "#if 0 // HARNESS: CGWindowListCreateImage obsoleted in SDK 26.5; skip off-screen snapshot fallback\nALLOW_DEPRECATED_DECLARATIONS_BEGIN\n    return adoptCF(CGWindowListCreateImage(CGRectNull, kCGWindowListOptionIncludingWindow, windowID, imageOptions));\nALLOW_DEPRECATED_DECLARATIONS_END\n#else\n    return nullptr;\n#endif"
+if old in s:
+    open(p, "w").write(s.replace(old, new, 1))
+    print("patched WebViewImpl.mm: CGWindowListCreateImage fallback returns nullptr (obsoleted API)")
+else:
+    print("WebViewImpl.mm CGWindowListCreateImage not found (trunk?)")
+
 
 
 # ATTEMPT-32: third consumer - LocalSampleBufferDisplayLayer.mm
