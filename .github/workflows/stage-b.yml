@@ -408,8 +408,14 @@ jobs:
           # before the unavailable-property reads.
           p3g = "Source/WebCore/platform/graphics/avfoundation/objc/MediaPlayerPrivateMediaSourceAVFObjC.mm"
           s3g = open(p3g).read()
-          old3g = "    auto metrics = [m_sampleBufferDisplayLayer videoPerformanceMetrics];\n    if (!metrics)\n        return std::nullopt;"
-          new3g = "#if 0 // HARNESS: AVVideoPerformanceMetrics properties unavailable on macOS SDK 26.5; layout tests do not read playback-quality metadata\n    auto metrics = [m_sampleBufferDisplayLayer videoPerformanceMetrics];\n    if (!metrics)\n        return std::nullopt;\n#else\n    return std::nullopt;\n#endif"
+          # ATTEMPT-30 correction: the attempt-29 #if 0 only covered the
+          # `auto metrics` declaration; the rest of the function still
+          # references `metrics` (undeclared under the new branch).
+          # Replace the WHOLE tail of videoPlaybackQualityMetrics() -
+          # from the metrics fetch through the closing return - with an
+          # early return.
+          old3g = "    auto metrics = [m_sampleBufferDisplayLayer videoPerformanceMetrics];\n    if (!metrics)\n        return std::nullopt;\n\n    uint32_t displayCompositedFrames = 0;\nALLOW_NEW_API_WITHOUT_GUARDS_BEGIN\n    if ([metrics respondsToSelector:@selector(numberOfDisplayCompositedVideoFrames)])\n        displayCompositedFrames = [metrics numberOfDisplayCompositedVideoFrames];\nALLOW_NEW_API_WITHOUT_GUARDS_END\n\n    return VideoPlaybackQualityMetrics {\n        static_cast<uint32_t>([metrics totalNumberOfVideoFrames]),\n        static_cast<uint32_t>([metrics numberOfDroppedVideoFrames]),\n        static_cast<uint32_t>([metrics numberOfCorruptedVideoFrames]),\n        [metrics totalFrameDelay],\n        displayCompositedFrames,\n    };"
+          new3g = "    // HARNESS: AVVideoPerformanceMetrics properties unavailable on macOS SDK 26.5; layout tests do not read playback-quality metadata\n    return std::nullopt;"
           if old3g in s3g:
               s3g = s3g.replace(old3g, new3g, 1)
               open(p3g, "w").write(s3g)
