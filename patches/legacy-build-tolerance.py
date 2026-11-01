@@ -207,6 +207,22 @@ if old in s:
     print("patched DisplayCaptureSourceCocoa.cpp: CGDisplayStream create call stubbed")
 else:
     print("DisplayCaptureSourceCocoa.cpp CGDisplayStream call not found (trunk?)")
+# ATTEMPT-35: WebCore.framework link fails on _dav1d_* symbols. The 2023
+# tree compiles LibWebRTCDav1dDecoder.cpp (and libavif.a with AVIF_CODEC_DAV1D)
+# but WebCore's OTHER_LDFLAGS never references libavif.a - Apple-internal
+# builders had it in /usr/local/lib. Patch WebCore.xcconfig to force-load
+# the built libavif.a (which itself force-loads libdav1d.a, resolving the
+# _dav1d_* symbols). Harness-only linkage completion, identical on both legs.
+p = "Source/WebCore/Configurations/WebCore.xcconfig"
+s = open(p).read()
+old = "$(WK_APPLEJPEGXL_LDFLAGS) $(WK_DEBUG_LDFLAGS);"
+new = "$(WK_APPLEJPEGXL_LDFLAGS) $(WK_DEBUG_LDFLAGS) -force_load $(BUILT_PRODUCTS_DIR)/libavif.a;"
+if old in s:
+    open(p, "w").write(s.replace(old, new, 1))
+    print("patched WebCore.xcconfig: OTHER_LDFLAGS force_loads libavif.a (dav1d symbols)")
+else:
+    print("WebCore.xcconfig OTHER_LDFLAGS tail not found (trunk?)")
+
 # ATTEMPT-32: third consumer - LocalSampleBufferDisplayLayer.mm
 # line 436: RELEASE_LOG reads all five properties inside a
 # #if !RELEASE_LOG_DISABLED block. Release builds have
