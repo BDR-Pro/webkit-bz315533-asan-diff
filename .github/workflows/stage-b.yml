@@ -488,10 +488,17 @@ jobs:
               [ -n "$TEST" ] || continue
               TAG="$(echo "$TEST" | tr '/' '_')"
               rc=0
+              # ATTEMPT-42: prefix leg returned rc=1 for all 10 iterations in
+              # ~0.7s each with NO full_results.json written - run-webkit-tests
+              # exits BEFORE running the test. >/dev/null hid the reason.
+              # Capture per-iteration output (uploaded via the iterations dir).
               Tools/Scripts/run-webkit-tests "$TEST" \
                 --no-build --no-show-results --no-retry \
                 --results-dir "$RUNNER_TEMP/iterations/run${i}-${TAG}" \
-                >/dev/null 2>&1 || rc=$?
+                > "$RUNNER_TEMP/iterations/rwt-run${i}-${TAG}.log" 2>&1 || rc=$?
+              echo "--- ls run${i}-${TAG} ---" >> "$RUNNER_TEMP/iterations/rwt-run${i}-${TAG}.log"
+              find "$RUNNER_TEMP/iterations/run${i}-${TAG}" -maxdepth 3 >> "$RUNNER_TEMP/iterations/rwt-run${i}-${TAG}.log" 2>&1 || true
+              tail -40 "$RUNNER_TEMP/iterations/rwt-run${i}-${TAG}.log"
               RES="$RUNNER_TEMP/iterations/run${i}-${TAG}/full_results.json"
               VERDICT="unknown"
               if grep -q '"num_regressions":0' "$RES" 2>/dev/null && grep -q '"num_passes":1' "$RES" 2>/dev/null; then
