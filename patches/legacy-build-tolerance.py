@@ -289,6 +289,39 @@ if old in s:
 else:
     print("WKFullScreenWindowController.mm takeWindowSnapshot fallback not found (trunk?)")
 
+# ATTEMPT-39: WebKit framework compilation advanced past
+# WKFullScreenController/WebViewImpl/WKFullScreenWindowController and
+# failed in PageClientImplMac.mm (UIProcess/mac). SDK 26.5 defines
+# kAXLoadCompleteNotification as a CFStringRef-flavored macro in its
+# accessibility headers, so the 2023 tree's local
+# `static NSString * const kAXLoadCompleteNotification = @"AXLoadComplete";`
+# (a) collides at the definition ("redefinition of 'CFStringRef' as
+# different kind of symbol" + "expected ')'") and (b) breaks the two
+# NSAccessibilityPostNotification call sites (macro expands to an
+# incomplete CFStringRef, not convertible to the SDK's
+# NSAccessibilityNotificationName NSString* parameter). Patch: rename
+# the local constant to a harness-unique name and update both call
+# sites - identical runtime semantics (posts the same @"AXLoadComplete"
+# notification). File byte-identical between both pinned legs.
+p = "Source/WebKit/UIProcess/mac/PageClientImplMac.mm"
+s = open(p).read()
+old = "static NSString * const kAXLoadCompleteNotification = @\"AXLoadComplete\";"
+new = "static NSString * const wkHarnessAXLoadCompleteNotification = @\"AXLoadComplete\"; // HARNESS: renamed - SDK 26.5 defines kAXLoadCompleteNotification as a CFStringRef macro"
+if old in s:
+    open(p, "w").write(s.replace(old, new, 1))
+    print("patched PageClientImplMac.mm: kAXLoadCompleteNotification constant renamed (SDK macro collision)")
+else:
+    print("PageClientImplMac.mm kAXLoadCompleteNotification definition not found (trunk?)")
+s = open(p).read()
+old = "NSAccessibilityPostNotification(NSAccessibilityUnignoredAncestor(m_view), kAXLoadCompleteNotification);"
+new = "NSAccessibilityPostNotification(NSAccessibilityUnignoredAncestor(m_view), wkHarnessAXLoadCompleteNotification);"
+n = s.count(old)
+if n:
+    open(p, "w").write(s.replace(old, new))
+    print("patched PageClientImplMac.mm: %d NSAccessibilityPostNotification call site(s) updated to renamed constant" % n)
+else:
+    print("PageClientImplMac.mm NSAccessibilityPostNotification call sites not found (trunk?)")
+
 # ATTEMPT-32: third consumer - LocalSampleBufferDisplayLayer.mm
 # line 436: RELEASE_LOG reads all five properties inside a
 # #if !RELEASE_LOG_DISABLED block. Release builds have
