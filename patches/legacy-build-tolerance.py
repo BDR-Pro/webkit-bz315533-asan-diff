@@ -322,6 +322,25 @@ if n:
 else:
     print("PageClientImplMac.mm NSAccessibilityPostNotification call sites not found (trunk?)")
 
+# ATTEMPT-40: the WebKit FRAMEWORK now builds on both legs; the failure
+# moved to build-webkit's MiniBrowser target - the fourth
+# CGWindowListCreateImage user, Tools/MiniBrowser/mac/
+# BrowserWindowController.m:329 (sharing-service transition snapshot).
+# Same un-suppressible obsoleted-API class as attempts 36-38. MiniBrowser
+# is a developer tool, never exercised by the tests under test (they run
+# in WebKitTestRunner) - zero effect on the code under test. Patch: #if 0
+# skip with a NULL image; the function's existing !imageRef path returns
+# nil. File byte-identical between both pinned legs.
+p = "Tools/MiniBrowser/mac/BrowserWindowController.m"
+s = open(p).read()
+old = "#pragma clang diagnostic push\n#pragma clang diagnostic ignored \"-Wdeprecated-declarations\"\n    CGImageRef imageRef = CGWindowListCreateImage(frame, kCGWindowListOptionIncludingWindow, (CGWindowID)[self.window windowNumber], kCGWindowImageBoundsIgnoreFraming);\n#pragma clang diagnostic pop"
+new = "#if 0 // HARNESS: CGWindowListCreateImage obsoleted in SDK 26.5; skip share-transition snapshot (MiniBrowser dev tool)\n#pragma clang diagnostic push\n#pragma clang diagnostic ignored \"-Wdeprecated-declarations\"\n    CGImageRef imageRef = CGWindowListCreateImage(frame, kCGWindowListOptionIncludingWindow, (CGWindowID)[self.window windowNumber], kCGWindowImageBoundsIgnoreFraming);\n#pragma clang diagnostic pop\n#else\n    CGImageRef imageRef = NULL;\n#endif"
+if old in s:
+    open(p, "w").write(s.replace(old, new, 1))
+    print("patched BrowserWindowController.m: MiniBrowser CGWindowListCreateImage snapshot skipped (obsoleted API)")
+else:
+    print("BrowserWindowController.m CGWindowListCreateImage not found (trunk?)")
+
 # ATTEMPT-32: third consumer - LocalSampleBufferDisplayLayer.mm
 # line 436: RELEASE_LOG reads all five properties inside a
 # #if !RELEASE_LOG_DISABLED block. Release builds have
