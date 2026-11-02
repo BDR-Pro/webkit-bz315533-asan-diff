@@ -341,6 +341,44 @@ if old in s:
 else:
     print("BrowserWindowController.m CGWindowListCreateImage not found (trunk?)")
 
+# ATTEMPT-41: MiniBrowser now builds; the failure moved deeper into the
+# Tools to DumpRenderTree - the FIFTH CGWindowListCreateImage user,
+# Tools/DumpRenderTree/mac/PixelDumpSupportMac.mm:85 (takeWindowSnapshot
+# helper used only by the on-screen pixel-dump path). Both legs fail
+# identically (prefix at Tools/WebKitTestRunner/mac/PlatformWebViewMac.mm
+# :225 in parallel - same class, patched next as ATTEMPT-41b). Tests run
+# under WebKitTestRunner without pixel comparison, so this snapshot path
+# is not exercised. Patch: #if 0 skip with nullptr return (identical to
+# the WebViewImpl/WKFullScreenWindowController fallback treatment).
+# File byte-identical between both pinned legs.
+p = "Tools/DumpRenderTree/mac/PixelDumpSupportMac.mm"
+s = open(p).read()
+old = "    imageOptions |= kCGWindowImageBoundsIgnoreFraming | kCGWindowImageShouldBeOpaque;\n    return adoptCF(CGWindowListCreateImage(CGRectNull, kCGWindowListOptionIncludingWindow, windowID, imageOptions));"
+new = "    imageOptions |= kCGWindowImageBoundsIgnoreFraming | kCGWindowImageShouldBeOpaque;\n#if 0 // HARNESS: CGWindowListCreateImage obsoleted in SDK 26.5; skip on-screen snapshot (unused without pixel comparison)\n    return adoptCF(CGWindowListCreateImage(CGRectNull, kCGWindowListOptionIncludingWindow, windowID, imageOptions));\n#else\n    return nullptr;\n#endif"
+if old in s:
+    open(p, "w").write(s.replace(old, new, 1))
+    print("patched PixelDumpSupportMac.mm: DumpRenderTree takeWindowSnapshot returns nullptr (obsoleted API)")
+else:
+    print("PixelDumpSupportMac.mm CGWindowListCreateImage not found (trunk?)")
+
+# ATTEMPT-41b: the SIXTH CGWindowListCreateImage user, in the tool that
+# DOES matter for the differential: Tools/WebKitTestRunner/mac/
+# PlatformWebViewMac.mm:225 (PlatformWebView::windowSnapshot for the
+# prefix leg; the fixed leg compiles it too). Same obsoleted-API hard
+# error. WTR's snapshot is used only for reftest/pixel comparisons;
+# our layout tests are crash-oracle, not pixel tests, so a null
+# snapshot never affects the verdict. Patch: #if 0 skip with nullptr
+# return. File byte-identical between both pinned legs.
+p = "Tools/WebKitTestRunner/mac/PlatformWebViewMac.mm"
+s = open(p).read()
+old = "    return adoptCF(CGWindowListCreateImage(CGRectNull, kCGWindowListOptionIncludingWindow, [m_window windowNumber], options));"
+new = "#if 0 // HARNESS: CGWindowListCreateImage obsoleted in SDK 26.5; skip window snapshot (crash-oracle tests do no pixel comparison)\n    return adoptCF(CGWindowListCreateImage(CGRectNull, kCGWindowListOptionIncludingWindow, [m_window windowNumber], options));\n#else\n    return nullptr;\n#endif"
+if old in s:
+    open(p, "w").write(s.replace(old, new, 1))
+    print("patched PlatformWebViewMac.mm: WTR windowSnapshot returns nullptr (obsoleted API)")
+else:
+    print("PlatformWebViewMac.mm CGWindowListCreateImage not found (trunk?)")
+
 # ATTEMPT-32: third consumer - LocalSampleBufferDisplayLayer.mm
 # line 436: RELEASE_LOG reads all five properties inside a
 # #if !RELEASE_LOG_DISABLED block. Release builds have
