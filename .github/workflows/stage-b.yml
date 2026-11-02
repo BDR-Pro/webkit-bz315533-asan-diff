@@ -488,11 +488,15 @@ jobs:
               [ -n "$TEST" ] || continue
               TAG="$(echo "$TEST" | tr '/' '_')"
               rc=0
-              # ATTEMPT-42: prefix leg returned rc=1 for all 10 iterations in
-              # ~0.7s each with NO full_results.json written - run-webkit-tests
-              # exits BEFORE running the test. >/dev/null hid the reason.
-              # Capture per-iteration output (uploaded via the iterations dir).
-              Tools/Scripts/run-webkit-tests "$TEST" \
+              # ATTEMPT-43: run-webkit-tests never started under the runner's
+              # default python3 (Homebrew 3.15): the 2023 webkitpy autoinstall
+              # builds pinned sdists (pyparsing-2.4.7 -> import sre_constants)
+              # that fail on modern Python. Invoke with Xcode's era-appropriate
+              # Python (3.9, the same interpreter the build phases used).
+              PY39="$(xcrun --find python3 2>/dev/null || true)"
+              [ -x "$PY39" ] || PY39="$(ls /Applications/Xcode*.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/*/bin/python3* 2>/dev/null | sort -V | tail -1)"
+              echo "using python: $PY39 ($("$PY39" --version 2>&1))"
+              "$PY39" Tools/Scripts/run-webkit-tests "$TEST" \
                 --no-build --no-show-results --no-retry \
                 --results-dir "$RUNNER_TEMP/iterations/run${i}-${TAG}" \
                 > "$RUNNER_TEMP/iterations/rwt-run${i}-${TAG}.log" 2>&1 || rc=$?
