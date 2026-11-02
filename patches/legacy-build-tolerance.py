@@ -253,7 +253,41 @@ if old in s:
 else:
     print("WebViewImpl.mm CGWindowListCreateImage not found (trunk?)")
 
-
+# ATTEMPT-38: the third CGWindowListCreateImage user is WebKit's
+# WKFullScreenWindowController.mm (UIProcess/mac full-screen
+# controller). Two sites: (1) the enter-fullscreen snapshot that
+# feeds the placeholder view contents; (2) the takeWindowSnapshot
+# off-screen fallback. Same obsoleted-API hard error as attempts
+# 36-37. Patch: #if 0 skips with a null snapshot; site 1's
+# createImageWithCopiedData consumer gains a null guard (the
+# helper does not null-check its source image). Full-screen
+# snapshot capture is never exercised by layout tests; benign
+# degradation, identical on both legs.
+p = "Source/WebKit/UIProcess/mac/WKFullScreenWindowController.mm"
+s = open(p).read()
+old = "ALLOW_DEPRECATED_DECLARATIONS_BEGIN\n    RetainPtr<CGImageRef> webViewContents = adoptCF(CGWindowListCreateImage(NSRectToCGRect(webViewFrame), kCGWindowListOptionIncludingWindow, windowID, kCGWindowImageShouldBeOpaque));\nALLOW_DEPRECATED_DECLARATIONS_END"
+new = "#if 0 // HARNESS: CGWindowListCreateImage obsoleted in SDK 26.5; skip full-screen snapshot\nALLOW_DEPRECATED_DECLARATIONS_BEGIN\n    RetainPtr<CGImageRef> webViewContents = adoptCF(CGWindowListCreateImage(NSRectToCGRect(webViewFrame), kCGWindowListOptionIncludingWindow, windowID, kCGWindowImageShouldBeOpaque));\nALLOW_DEPRECATED_DECLARATIONS_END\n#else\n    RetainPtr<CGImageRef> webViewContents;\n#endif"
+if old in s:
+    open(p, "w").write(s.replace(old, new, 1))
+    print("patched WKFullScreenWindowController.mm: enter-fullscreen CGWindowListCreateImage snapshot skipped (obsoleted API)")
+else:
+    print("WKFullScreenWindowController.mm enter-fullscreen snapshot not found (trunk?)")
+s = open(p).read()
+old = "    webViewContents = createImageWithCopiedData(webViewContents.get());"
+new = "    if (webViewContents) // HARNESS: null-guard for skipped snapshot (createImageWithCopiedData does not null-check)\n        webViewContents = createImageWithCopiedData(webViewContents.get());"
+if old in s:
+    open(p, "w").write(s.replace(old, new, 1))
+    print("patched WKFullScreenWindowController.mm: createImageWithCopiedData consumer null-guarded")
+else:
+    print("WKFullScreenWindowController.mm createImageWithCopiedData call not found (trunk?)")
+s = open(p).read()
+old = "ALLOW_DEPRECATED_DECLARATIONS_BEGIN\n    return adoptCF(CGWindowListCreateImage(CGRectNull, kCGWindowListOptionIncludingWindow, windowID, imageOptions));\nALLOW_DEPRECATED_DECLARATIONS_END"
+new = "#if 0 // HARNESS: CGWindowListCreateImage obsoleted in SDK 26.5; skip off-screen snapshot fallback\nALLOW_DEPRECATED_DECLARATIONS_BEGIN\n    return adoptCF(CGWindowListCreateImage(CGRectNull, kCGWindowListOptionIncludingWindow, windowID, imageOptions));\nALLOW_DEPRECATED_DECLARATIONS_END\n#else\n    return nullptr;\n#endif"
+if old in s:
+    open(p, "w").write(s.replace(old, new, 1))
+    print("patched WKFullScreenWindowController.mm: takeWindowSnapshot fallback returns nullptr (obsoleted API)")
+else:
+    print("WKFullScreenWindowController.mm takeWindowSnapshot fallback not found (trunk?)")
 
 # ATTEMPT-32: third consumer - LocalSampleBufferDisplayLayer.mm
 # line 436: RELEASE_LOG reads all five properties inside a
