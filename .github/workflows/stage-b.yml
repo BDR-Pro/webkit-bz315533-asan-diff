@@ -41,14 +41,16 @@ env:
   WEBKIT_FIX_REF: "f53d1f284bc24887cb00783ef8aee9e35809b8bc"
   INPUT_TEST_PATH: ${{ inputs.test_path || 'fast/scrolling/mac/event-dispatcher-timer-close-crash.html' }}
   SECONDARY_TEST_PATH: ${{ inputs.secondary_test_path }}
-  # ATTEMPT-44 aftermath: the 263182 differential landed (parent CRASH
-  # 10/10 vs fixed PASS 10/10) but no AddressSanitizer report was
-  # captured anywhere (stderr held only the WTR termination notice and
-  # DiagnosticReports was empty). ASan writes reports to a file when
-  # log_path is set; point it into the uploaded iterations dir so the
-  # 263019 differential (OOB read as the crash mechanism) can capture
-  # the exact sanitizer finding class as evidence. %p expands to pid.
-  ASAN_OPTIONS: "detect_leaks=0:log_path=/Users/runner/work/_temp/iterations/asan-report"
+  # ATTEMPT-45 (263019 differential, run 41573987755): BOTH legs crashed
+  # 10/10 in com.apple.WebKit.Networking.Development at ASan thread start:
+  #   CHECK failed: sanitizer_posix_libcdep.cpp:191 "sigaltstack(...)" in
+  #   SetAlternateSignalStack
+  # - the ASan runtime cannot install its alternate signal stack inside
+  # the sandboxed Networking process on this runner image, before any test
+  # code runs. Identical on both legs = environmental, NOT a differential.
+  # use_sigaltstack=0 is the documented workaround (signal-handler stack
+  # only; zero effect on memory-error detection).
+  ASAN_OPTIONS: "detect_leaks=0:use_sigaltstack=0:log_path=/Users/runner/work/_temp/iterations/asan-report"
 
 jobs:
   asan-differential:
