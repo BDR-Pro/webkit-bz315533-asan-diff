@@ -379,6 +379,42 @@ if old in s:
 else:
     print("PlatformWebViewMac.mm CGWindowListCreateImage not found (trunk?)")
 
+# ATTEMPT-46: use_sigaltstack=0 in the workflow ASAN_OPTIONS did NOT fix
+# the Networking-process startup crash - because WebKit child processes
+# do not inherit the runner env (no asan-report log files were created
+# and the CHECK text went to stderr, both proving the child runs ASan
+# with DEFAULT options). Binary-embedded fix: define
+# __asan_default_options() in WTF (linked into every WebKit child
+# process - WebContent, Networking, WTR itself), so the option applies
+# regardless of environment scrubbing. Zero effect on memory-error
+# detection; identical on both legs. Appended to Threading.cpp (present
+# in both pinned trees; no existing __asan_default_options anywhere in
+# the tree per GitHub code search).
+p = "Source/WTF/wtf/Threading.cpp"
+s = open(p).read()
+old = "} // namespace WTF\n"
+new = """} // namespace WTF
+
+extern "C" const char *__asan_default_options()
+{
+    // HARNESS: ASan runtime cannot install its alternate signal stack
+    // inside sandboxed WebKit child processes on the Xcode 26.6 runner
+    // image (CHECK failed: sanitizer_posix_libcdep.cpp:191 sigaltstack).
+    // Embedded default because child processes get a scrubbed
+    // environment and never see ASAN_OPTIONS. use_sigaltstack=0 only
+    // disables the dedicated signal-handler stack; memory-error
+    // detection is unaffected. Identical on both differential legs.
+    return "use_sigaltstack=0:detect_leaks=0";
+}
+"""
+if old in s and "__asan_default_options" not in s:
+    open(p, "w").write(s.replace(old, new, 1))
+    print("patched Threading.cpp: embedded __asan_default_options (use_sigaltstack=0)")
+elif "__asan_default_options" in s:
+    print("Threading.cpp already has __asan_default_options (idempotent)")
+else:
+    print("Threading.cpp WTF namespace terminator not found (trunk?)")
+
 # ATTEMPT-32: third consumer - LocalSampleBufferDisplayLayer.mm
 # line 436: RELEASE_LOG reads all five properties inside a
 # #if !RELEASE_LOG_DISABLED block. Release builds have
