@@ -41,7 +41,14 @@ env:
   WEBKIT_FIX_REF: "f53d1f284bc24887cb00783ef8aee9e35809b8bc"
   INPUT_TEST_PATH: ${{ inputs.test_path || 'fast/scrolling/mac/event-dispatcher-timer-close-crash.html' }}
   SECONDARY_TEST_PATH: ${{ inputs.secondary_test_path }}
-  ASAN_OPTIONS: "detect_leaks=0"
+  # ATTEMPT-44 aftermath: the 263182 differential landed (parent CRASH
+  # 10/10 vs fixed PASS 10/10) but no AddressSanitizer report was
+  # captured anywhere (stderr held only the WTR termination notice and
+  # DiagnosticReports was empty). ASan writes reports to a file when
+  # log_path is set; point it into the uploaded iterations dir so the
+  # 263019 differential (OOB read as the crash mechanism) can capture
+  # the exact sanitizer finding class as evidence. %p expands to pid.
+  ASAN_OPTIONS: "detect_leaks=0:log_path=/Users/runner/work/_temp/iterations/asan-report"
 
 jobs:
   asan-differential:
