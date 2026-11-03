@@ -415,6 +415,51 @@ elif "__asan_default_options" in s:
 else:
     print("Threading.cpp WTF namespace terminator not found (trunk?)")
 
+# ATTEMPT-47: true root cause of the Networking-process startup crash.
+# WebKit's sandbox profiles gate the sigaltstack syscall allowance:
+#     #if ASAN_ENABLED
+#             SYS_sigaltstack
+#     #endif
+# but the "Pre-processing ... sandbox profile" build phase runs plain
+# 'clang -E -P -w ... -include wtf/Platform.h' WITHOUT -fsanitize=address
+# (verified in run 41637712079's job log), so __has_feature(address_
+# sanitizer) is false, ASAN_ENABLED is 0, and the compiled .sb DROPS
+# the sigaltstack allowance. The sandboxed Networking/GPU child
+# processes then get sigaltstack() denied (EPERM) and the ASan runtime
+# dies at asan_thread_start -> SetAlternateSignalStack -> CHECK
+# (sanitizer_posix_libcdep.cpp:191) before any test code runs.
+# use_sigaltstack=0 could not help: that thread-start path calls
+# SetAlternateSignalStack unconditionally before flags apply.
+# Fix: force the SYS_sigaltstack line into every sandbox profile that
+# carries the ASAN_ENABLED guard (identical accommodation on both
+# legs; inert when the process is unsandboxed or sigaltstack allowed).
+SB_GUARD_OLD = "#if ASAN_ENABLED\n        SYS_sigaltstack\n#endif"
+SB_GUARD_NEW = "        SYS_sigaltstack"
+SB_FILES = [
+    "Source/WebKit/Resources/SandboxProfiles/ios/com.apple.WebKit.Networking.sb.in",
+    "Source/WebKit/Resources/SandboxProfiles/ios/com.apple.WebKit.GPU.sb.in",
+    "Source/WebKit/Resources/SandboxProfiles/ios/com.apple.WebKit.WebContent.sb.in",
+    "Source/WebKit/Resources/SandboxProfiles/ios/com.apple.WebKit.adattributiond.sb.in",
+    "Source/WebKit/Resources/SandboxProfiles/ios/com.apple.WebKit.webpushd.sb.in",
+    "Source/WebKit/WebProcess/com.apple.WebProcess.sb.in",
+    "Source/WebKit/NetworkProcess/mac/com.apple.WebKit.NetworkProcess.sb.in",
+    "Source/WebKit/GPUProcess/mac/com.apple.WebKit.GPUProcess.sb.in",
+    "Source/WebKit/webpushd/mac/com.apple.WebKit.webpushd.mac.sb.in",
+]
+for sbp in SB_FILES:
+    try:
+        s = open(sbp).read()
+    except FileNotFoundError:
+        print("sandbox profile not present, skipped: " + sbp)
+        continue
+    if SB_GUARD_OLD in s:
+        open(sbp, "w").write(s.replace(SB_GUARD_OLD, SB_GUARD_NEW, 1))
+        print("patched " + sbp + ": SYS_sigaltstack ASAN_ENABLED guard forced on")
+    elif "SYS_sigaltstack" in s:
+        print("sandbox profile already allows sigaltstack: " + sbp)
+    else:
+        print("no sigaltstack rule in " + sbp + " (unexpected)")
+
 # ATTEMPT-32: third consumer - LocalSampleBufferDisplayLayer.mm
 # line 436: RELEASE_LOG reads all five properties inside a
 # #if !RELEASE_LOG_DISABLED block. Release builds have
