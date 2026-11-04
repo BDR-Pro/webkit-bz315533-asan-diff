@@ -502,12 +502,12 @@ else:
 p = "Source/ThirdParty/libwebrtc/Source/third_party/abseil-cpp/absl/base/attributes.h"
 s = open(p).read()
 old = "#if ABSL_HAVE_CPP_ATTRIBUTE(clang::lifetimebound)\n#define ABSL_ATTRIBUTE_LIFETIME_BOUND [[clang::lifetimebound]]\n#elif ABSL_HAVE_ATTRIBUTE(lifetimebound)\n#define ABSL_ATTRIBUTE_LIFETIME_BOUND __attribute__((lifetimebound))\n#else\n#define ABSL_ATTRIBUTE_LIFETIME_BOUND\n#endif"
-new = "#if 0 // HARNESS: clang 21 rejects lifetimebound on void-returning function parameters (libwebrtc candidate.h); annotation-only attribute, no codegen\n#define ABSL_ATTRIBUTE_LIFETIME_BOUND [[clang::lifetimebound]]\n#elif ABSL_HAVE_ATTRIBUTE(lifetimebound)\n#define ABSL_ATTRIBUTE_LIFETIME_BOUND __attribute__((lifetimebound))\n#else\n#define ABSL_ATTRIBUTE_LIFETIME_BOUND\n#endif"
+new = "#define ABSL_ATTRIBUTE_LIFETIME_BOUND // HARNESS: clang 21 rejects lifetimebound on void-returning function parameters (libwebrtc candidate.h); annotation-only attribute, no codegen. Whole detection chain collapsed to empty (attempt-50 lesson: disabling only the first branch falls through to the __attribute__ branch)."
 if old in s:
     open(p, "w").write(s.replace(old, new, 1))
-    print("patched abseil attributes.h: ABSL_ATTRIBUTE_LIFETIME_BOUND neutralized (clang 21 lifetimebound rule)")
-elif "#if 0 // HARNESS: clang 21 rejects lifetimebound" in s:
-    print("abseil attributes.h lifetimebound already neutralized (idempotent)")
+    print("patched abseil attributes.h: ABSL_ATTRIBUTE_LIFETIME_BOUND chain collapsed to empty define")
+elif "ABSL_ATTRIBUTE_LIFETIME_BOUND //" in s:
+    print("abseil attributes.h lifetimebound already collapsed (idempotent)")
 else:
     print("abseil attributes.h lifetimebound macro block not found (trunk?)")
 
