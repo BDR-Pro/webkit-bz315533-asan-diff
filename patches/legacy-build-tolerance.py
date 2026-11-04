@@ -460,6 +460,38 @@ for sbp in SB_FILES:
     else:
         print("no sigaltstack rule in " + sbp + " (unexpected)")
 
+# ATTEMPT-48b (B4 campaign, 2024-era pins only): Xcode 26 hard-errors
+# "Multiple commands produce WebKit.framework/Frameworks" because the
+# 2024-era "Make Frameworks Symbolic Link" script phase declares the
+# symlink as a build output while modern Xcode creates it itself.
+# Upstream's own fix (commit 748d56ebc1c8, BZ 286370) makes the phase
+# declare zero dependencies and install-only; we apply the SAME
+# transformation to both pbxprojs at the pinned refs (identical on
+# both legs; the phase no longer feeds build-system dependency
+# analysis).
+WK_PBX = "Source/WebKit/WebKit.xcodeproj/project.pbxproj"
+s = open(WK_PBX).read()
+WK_OLD = "\t\t1A07D2F51919AA8A00ECDA16 /* Make Frameworks Symbolic Link */ = {\n\t\t\tisa = PBXShellScriptBuildPhase;\n\t\t\tbuildActionMask = 2147483647;\n\t\t\tfiles = (\n\t\t\t);\n\t\t\tinputPaths = (\n\t\t\t);\n\t\t\tname = \"Make Frameworks Symbolic Link\";\n\t\t\toutputPaths = (\n\t\t\t\t\"$(TARGET_BUILD_DIR)/WebKit.framework/Frameworks\",\n\t\t\t);\n\t\t\trunOnlyForDeploymentPostprocessing = 0;"
+WK_NEW = "\t\t1A07D2F51919AA8A00ECDA16 /* Make Frameworks Symbolic Link */ = {\n\t\t\tisa = PBXShellScriptBuildPhase;\n\t\t\talwaysOutOfDate = 1;\n\t\t\tbuildActionMask = 8;\n\t\t\tfiles = (\n\t\t\t);\n\t\t\tinputPaths = (\n\t\t\t);\n\t\t\tname = \"Make Frameworks Symbolic Link\";\n\t\t\toutputPaths = (\n\t\t\t);\n\t\t\trunOnlyForDeploymentPostprocessing = 1;"
+if WK_OLD in s:
+    open(WK_PBX, "w").write(s.replace(WK_OLD, WK_NEW, 1))
+    print("patched WebKit pbxproj: Make Frameworks Symbolic Link phase zero-dep install-only (upstream 748d56ebc1c8 transformation)")
+elif "alwaysOutOfDate = 1;\n\t\t\tbuildActionMask = 8;" in s:
+    print("WebKit pbxproj symbolic-link phase already transformed (idempotent)")
+else:
+    print("WebKit pbxproj symbolic-link phase not found (2023-era pins lack it)")
+WC_PBX = "Source/WebCore/WebCore.xcodeproj/project.pbxproj"
+s = open(WC_PBX).read()
+WC_OLD = "\t\t\t\t$TARGET_BUILD_DIR/WebCore.framework/Frameworks,\n"
+WC_NEW = "\t\t\t\t\"$(TARGET_BUILD_DIR)/WebCore.framework/Frameworks\",\n"
+if WC_OLD in s:
+    open(WC_PBX, "w").write(s.replace(WC_OLD, WC_NEW, 1))
+    print("patched WebCore pbxproj: Make Frameworks Symbolic Link output path quoted (upstream 748d56ebc1c8 transformation)")
+elif WC_NEW in s:
+    print("WebCore pbxproj output path already quoted (idempotent)")
+else:
+    print("WebCore pbxproj symbolic-link phase not found (older pins?)")
+
 # ATTEMPT-32: third consumer - LocalSampleBufferDisplayLayer.mm
 # line 436: RELEASE_LOG reads all five properties inside a
 # #if !RELEASE_LOG_DISABLED block. Release builds have

@@ -15,6 +15,10 @@ on:
         description: "Fix commit SHA (for test import; defaults to the 315533 fix)"
         required: false
         default: "f53d1f284bc24887cb00783ef8aee9e35809b8bc"
+      test_ref:
+        description: "Commit that ADDS the regression test, when the fix commit does not carry it (defaults to fix_ref)"
+        required: false
+        default: ""
       matrix_json:
         description: "Matrix JSON array of legs (leg, webkit_ref, san, iterations)"
         required: false
@@ -170,13 +174,18 @@ jobs:
         if: matrix.leg == 'prefix'
         run: |
           cd "$RUNNER_TEMP/webkit"
-          git -c protocol.version=2 fetch --depth 2 origin "${{ inputs.fix_ref || env.WEBKIT_FIX_REF }}"
+          # ATTEMPT-48b: some fixes (e.g. BZ 272488's 7edad1b0d5e5) touch
+          # only product code; the regression test was added by a separate
+          # commit (7998bd43fa21, BZ 272687). Import from test_ref when
+          # provided, else fix_ref (the historical behavior).
+          TEST_IMPORT_REF="${{ inputs.test_ref || inputs.fix_ref || env.WEBKIT_FIX_REF }}"
+          git -c protocol.version=2 fetch --depth 2 origin "$TEST_IMPORT_REF"
           git checkout FETCH_HEAD -- \
             "LayoutTests/$TEST_PATH" \
             "LayoutTests/${TEST_PATH%.html}-expected.txt" || {
-              # test may not exist at f53d1f28 either; import from 2df698f
+              # test may not exist there either; import from the 315533-era fallback
               git -c protocol.version=2 fetch --depth 1 origin \
-                "${{ inputs.fix_ref || '2df698f59386b2ffccd45c7ef28422b69eba8c44' }}"
+                "${{ inputs.test_ref || '2df698f59386b2ffccd45c7ef28422b69eba8c44' }}"
               git checkout FETCH_HEAD -- \
                 "LayoutTests/$TEST_PATH" \
                 "LayoutTests/${TEST_PATH%.html}-expected.txt"
