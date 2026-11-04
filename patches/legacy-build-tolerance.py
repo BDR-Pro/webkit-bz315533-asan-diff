@@ -492,6 +492,25 @@ elif WC_NEW in s:
 else:
     print("WebCore pbxproj symbolic-link phase not found (older pins?)")
 
+# ATTEMPT-49 (B4 campaign, 2024-era pins only): clang 21 hard-errors on
+# 'lifetimebound' applied to a parameter of a void-returning function
+# (a C++26-era rule change): libwebrtc's candidate.h set_type(void)
+# carries ABSL_ATTRIBUTE_LIFETIME_BOUND, which clang 21 rejects.
+# The attribute is a static-analysis annotation only (no codegen);
+# neutralize the abseil macro definition so it expands to nothing -
+# identical on both legs, zero codegen effect.
+p = "Source/ThirdParty/libwebrtc/Source/third_party/abseil-cpp/absl/base/attributes.h"
+s = open(p).read()
+old = "#if ABSL_HAVE_CPP_ATTRIBUTE(clang::lifetimebound)\n#define ABSL_ATTRIBUTE_LIFETIME_BOUND [[clang::lifetimebound]]\n#elif ABSL_HAVE_ATTRIBUTE(lifetimebound)\n#define ABSL_ATTRIBUTE_LIFETIME_BOUND __attribute__((lifetimebound))\n#else\n#define ABSL_ATTRIBUTE_LIFETIME_BOUND\n#endif"
+new = "#if 0 // HARNESS: clang 21 rejects lifetimebound on void-returning function parameters (libwebrtc candidate.h); annotation-only attribute, no codegen\n#define ABSL_ATTRIBUTE_LIFETIME_BOUND [[clang::lifetimebound]]\n#elif ABSL_HAVE_ATTRIBUTE(lifetimebound)\n#define ABSL_ATTRIBUTE_LIFETIME_BOUND __attribute__((lifetimebound))\n#else\n#define ABSL_ATTRIBUTE_LIFETIME_BOUND\n#endif"
+if old in s:
+    open(p, "w").write(s.replace(old, new, 1))
+    print("patched abseil attributes.h: ABSL_ATTRIBUTE_LIFETIME_BOUND neutralized (clang 21 lifetimebound rule)")
+elif "#if 0 // HARNESS: clang 21 rejects lifetimebound" in s:
+    print("abseil attributes.h lifetimebound already neutralized (idempotent)")
+else:
+    print("abseil attributes.h lifetimebound macro block not found (trunk?)")
+
 # ATTEMPT-32: third consumer - LocalSampleBufferDisplayLayer.mm
 # line 436: RELEASE_LOG reads all five properties inside a
 # #if !RELEASE_LOG_DISABLED block. Release builds have
