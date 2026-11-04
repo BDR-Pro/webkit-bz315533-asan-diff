@@ -511,6 +511,35 @@ elif "ABSL_ATTRIBUTE_LIFETIME_BOUND //" in s:
 else:
     print("abseil attributes.h lifetimebound macro block not found (trunk?)")
 
+# ATTEMPT-51 (B4 campaign, 2024-era pins only): SDK 26.5's accessibility
+# headers now declare kAXConvertRelativeFrameParameterizedAttribute as a
+# CFStringRef-flavored macro, so the tree's `#define ... @"AXConvertRelativeFrame"`
+# inside `#ifndef` never fires and both uses in
+# WebAccessibilityObjectWrapperMac.mm fail to convert CFStringRef ->
+# NSString*/id (the SDK macro's expansion is an incomplete CFStringRef).
+# Same era class as the kAXLoadCompleteNotification collision (attempt
+# 39). Patch: rename the local define and both call sites to a
+# harness-unique constant - identical runtime semantics (same string
+# literal). Identical on both legs.
+p = "Source/WebCore/accessibility/mac/WebAccessibilityObjectWrapperMac.mm"
+s = open(p).read()
+old = "#ifndef kAXConvertRelativeFrameParameterizedAttribute\n#define kAXConvertRelativeFrameParameterizedAttribute @\"AXConvertRelativeFrame\"\n#endif"
+new = "#define wkHarnessAXConvertRelativeFrameParameterizedAttribute @\"AXConvertRelativeFrame\" // HARNESS: renamed - SDK 26.5 defines kAXConvertRelativeFrameParameterizedAttribute as a CFStringRef macro"
+if old in s:
+    open(p, "w").write(s.replace(old, new, 1))
+    print("patched WebAccessibilityObjectWrapperMac.mm: kAXConvertRelativeFrameParameterizedAttribute define renamed (SDK macro collision)")
+elif "wkHarnessAXConvertRelativeFrameParameterizedAttribute" in s:
+    print("WebAccessibilityObjectWrapperMac.mm constant already renamed (idempotent)")
+else:
+    print("WebAccessibilityObjectWrapperMac.mm kAXConvertRelativeFrame guard not found (trunk?)")
+s = open(p).read()
+n = s.count("kAXConvertRelativeFrameParameterizedAttribute")
+if n:
+    open(p, "w").write(s.replace("kAXConvertRelativeFrameParameterizedAttribute", "wkHarnessAXConvertRelativeFrameParameterizedAttribute"))
+    print("patched WebAccessibilityObjectWrapperMac.mm: %d call site(s) updated to renamed constant" % n)
+else:
+    print("WebAccessibilityObjectWrapperMac.mm call sites not found (trunk?)")
+
 # ATTEMPT-32: third consumer - LocalSampleBufferDisplayLayer.mm
 # line 436: RELEASE_LOG reads all five properties inside a
 # #if !RELEASE_LOG_DISABLED block. Release builds have
